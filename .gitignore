@@ -216,3 +216,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Arquivos de log e relatorios do Sync Engine
+*.log
+ultimo_dry_run.txt
+ultimo_relatorio_tamanho.txt
+ultima_sincronizacao_manual.txt
+
+# Bancos de dados SQLite
+*.db
+*.sqlite3
+
+# Pastas de ambiente virtual (caso use no futuro)
+venv/
+.venv/
