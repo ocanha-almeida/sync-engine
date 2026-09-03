@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "3.4"
+VERSION = "3.5"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -838,6 +838,7 @@ Gerenciamento do Motor de Fundo:
   status         Exibe o status e o histórico de logs do motor.
 
 Utilitários:
+  version, -v    Exibe a versão atual do script.
   help, -h       Exibe esta ajuda.
 """
     print(ajuda.strip())
@@ -849,6 +850,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         comando = sys.argv[1].lower()
         if comando in ["help", "-h", "--help"]: print_help()
+        elif comando in ["version", "-v", "--version"]: print(f"Sync Engine v{VERSION}")
         elif comando == "config": run_config_wizard()
         elif comando == "now": run_now()
         elif comando == "test": run_dry_run()
