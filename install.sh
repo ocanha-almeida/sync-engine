@@ -31,6 +31,7 @@ if [ "$1" == "uninstall" ] || [ "$1" == "--uninstall" ]; then
   echo "💡 Dica: Seus bancos de dados (.db) e exclusões foram mantidos por segurança."
   echo "   Se quiser apagar TUDO definitivamente, rode no seu usuário comum:"
   echo "   rm -rf ~/.config/sync_engine"
+  echo "⚠️  Nota: A permissão de background contínuo (linger) para o usuário $SUDO_USER foi mantida ativa, pois pode ser útil para outras aplicações."
   exit 0
 fi
 
@@ -71,6 +72,10 @@ EOF
 # 4. Cria um atalho global (symlink)
 echo "Criando atalho global 'sync-engine'..."
 ln -sf /opt/sync-engine/sync_engine.py /usr/local/bin/sync-engine
+
+# 5. Permite aos usuário executarem serviços automaticamente
+echo "⚙️  Ativando modo de execução contínua (Linger) para o usuário $SUDO_USER..."
+loginctl enable-linger $SUDO_USER
 
 echo ""
 echo "✅ Instalação concluída com sucesso!"

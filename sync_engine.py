@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "3.9"
+VERSION = "4.0"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -375,22 +375,38 @@ def run_analyze_errors():
     lstat_errors = 0
     etag_errors = 0
     resync_requests = 0
+    lock_errors = 0
     other_errors = 0
     total_errors = 0
+    
+    lock_file_path = ""
 
     with open(sync_report, "r", encoding="utf-8") as f:
         for line in f:
             line_lower = line.lower()
-            if "error :" in line or "failed to" in line_lower or "critical error" in line_lower:
-                total_errors += 1
+            
+            if "error :" in line_lower or "failed to" in line_lower or "critical error" in line_lower or "prior lock file found" in line_lower:
                 if "lstat" in line_lower and "no such file or directory" in line_lower:
                     lstat_errors += 1
+                    total_errors += 1
                 elif "409 conflict" in line_lower or "etag mismatch" in line_lower:
                     etag_errors += 1
+                    total_errors += 1
                 elif "cannot find prior path1 or path2 listings" in line_lower:
                     resync_requests += 1
+                    total_errors += 1
+                elif "prior lock file found" in line_lower:
+                    lock_errors += 1
+                    total_errors += 1
+                    if ".lck" in line:
+                        try:
+                            # Tenta extrair o caminho exato do cadeado sugerido pelo Rclone
+                            lock_file_path = line.split("prior lock file found:")[1].strip()
+                        except IndexError:
+                            pass
                 else:
                     other_errors += 1
+                    total_errors += 1
 
     if total_errors == 0:
         print("✨ Excelente! Não encontramos nenhum erro no último relatório.")
@@ -398,6 +414,15 @@ def run_analyze_errors():
     else:
         print(f"⚠️  O motor encontrou {total_errors} indícios de problemas no último relatório.\n")
         
+        if lock_errors > 0:
+            print(f"🔹 {lock_errors}x Erros de 'Cadeado Trancado' (Lock File):")
+            print("   Causa: Uma sincronização anterior foi interrompida à força e o cadeado ficou preso no sistema.")
+            print("   💊 SOLUÇÃO: Copie e cole o comando abaixo no seu terminal para quebrar o cadeado:\n")
+            if lock_file_path:
+                print(f"      rclone deletefile \"{lock_file_path}\"\n")
+            else:
+                print("      rclone deletefile \"~/.cache/rclone/bisync/NOME_DA_CONTA.lck\"\n")
+
         if lstat_errors > 0:
             print(f"🔹 {lstat_errors}x Erros de 'Arquivo não encontrado' (lstat):")
             print("   Causa: O Rclone viu o arquivo, mas não conseguiu acessá-lo na hora do upload.")
