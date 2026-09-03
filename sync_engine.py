@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "3.5"
+VERSION = "3.7"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -209,6 +209,176 @@ def run_update():
     except Exception as e:
         print(f"\n❌ Erro durante o processo de atualização: {e}")
         pause()
+
+# ==========================================
+# ROTINAS DE HIGIENIZAÇÃO E ANÁLISE (NOVAS)
+# ==========================================
+def run_filename_cleaner():
+    clear_screen()
+    print("="*45)
+    print("🧹 HIGIENIZADOR DE NOMES DE ARQUIVOS (PRÉ-VISUALIZAÇÃO)")
+    print("="*45)
+    print("Remove/substitui caracteres especiais que causam erros 'lstat' no Rclone.")
+    print("Alvos: ‛ ＂ ｜ ⧸ ： ？ ＊ ★ ✬ ☆\n")
+
+    config = load_config()
+    ACCOUNTS = config.get("ACCOUNTS", [])
+
+    print("Escolha o diretório alvo para a limpeza:")
+    print("[0] Digitar um caminho manual personalizado")
+    for i, acc in enumerate(ACCOUNTS):
+        print(f"[{i+1}] Pasta da conta '{acc['PROFILE_NAME']}' ({acc['LOCAL_DIR']})")
+    print("[C] Cancelar")
+
+    op = input("\nOpção: ").strip().lower()
+    if op == 'c': return
+
+    alvo = ""
+    if op == '0':
+        alvo = input("\nDigite o caminho completo da pasta (ex: ~/Músicas): ").strip()
+    elif op.isdigit() and 1 <= int(op) <= len(ACCOUNTS):
+        alvo = ACCOUNTS[int(op)-1]["LOCAL_DIR"]
+    else:
+        print("❌ Opção inválida."); time.sleep(1.5); return
+
+    alvo_expandido = os.path.expanduser(alvo)
+    if not os.path.isdir(alvo_expandido):
+        print(f"\n❌ Erro: O diretório '{alvo_expandido}' não existe.")
+        pause()
+        return
+
+    print("\n🔍 Analisando diretório... Aguarde.\n")
+    substituicoes = {
+        "‛‛": "", "‛": "'", "＂": "", "｜": "-", "⧸": "-",
+        "：": "-", "？": "", "＊": "", "★": "", "✬": "", "☆": ""
+    }
+
+    arquivos_para_renomear = []
+    
+    for root, dirs, files in os.walk(alvo_expandido):
+        for nome in files:
+            novo_nome = nome
+            for ruim, bom in substituicoes.items():
+                novo_nome = novo_nome.replace(ruim, bom)
+
+            while "  " in novo_nome:
+                novo_nome = novo_nome.replace("  ", " ")
+            novo_nome = novo_nome.replace(" .", ".")
+
+            if novo_nome != nome:
+                caminho_antigo = os.path.join(root, nome)
+                caminho_novo = os.path.join(root, novo_nome)
+                arquivos_para_renomear.append((caminho_antigo, caminho_novo, nome, novo_nome))
+
+    if not arquivos_para_renomear:
+        print("✨ Tudo limpo! Nenhum arquivo precisa ser renomeado.")
+        pause()
+        return
+
+    print(f"⚠️ Encontrados {len(arquivos_para_renomear)} arquivos com caracteres inválidos.\n")
+    print("--- PRÉ-VISUALIZAÇÃO (Exibindo até 10 exemplos) ---")
+    for _, _, antigo, novo in arquivos_para_renomear[:10]:
+        print(f" DE:   {antigo}\n PARA: {novo}\n")
+    
+    if len(arquivos_para_renomear) > 10:
+        print(f"... e mais {len(arquivos_para_renomear) - 10} arquivos.\n")
+
+    confirma = input(f"Confirma a alteração destes {len(arquivos_para_renomear)} arquivos? (S/N): ").strip().lower()
+    if confirma != 's':
+        print("\nOperação cancelada pelo usuário.")
+        pause()
+        return
+
+    print("\nIniciando renomeação e gerando relatório...")
+    report_dir = get_report_dir(config)
+    report_path = os.path.join(report_dir, "ultimo_relatorio_higienizacao.txt")
+    renomeados = 0
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("="*45 + "\n")
+        f.write("🧹 RELATÓRIO DE HIGIENIZAÇÃO DE NOMES\n")
+        f.write(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
+        f.write("="*45 + "\n\n")
+
+        for caminho_antigo, caminho_novo, nome, novo_nome in arquivos_para_renomear:
+            try:
+                os.rename(caminho_antigo, caminho_novo)
+                f.write(f"✅ [SUCESSO] De: '{nome}' -> Para: '{novo_nome}'\n")
+                renomeados += 1
+            except Exception as e:
+                f.write(f"❌ [ERRO] Falha em '{nome}': {e}\n")
+
+    print(f"\n🎉 Concluído! {renomeados} arquivos foram higienizados.")
+    print(f"📂 Relatório completo salvo em: {report_path}")
+    pause()
+
+def run_analyze_errors():
+    clear_screen()
+    print("="*45)
+    print("🔎 ANALISADOR DE ERROS DE SINCRONIZAÇÃO")
+    print("="*45)
+
+    config = load_config()
+    report_dir = get_report_dir(config)
+    sync_report = os.path.join(report_dir, "ultima_sincronizacao_manual.txt")
+
+    if not os.path.exists(sync_report):
+        print("\n❌ Nenhum relatório de sincronização encontrado.")
+        print("Execute a 'Opção 6 (Sincronizar Agora)' primeiro para gerar dados.")
+        pause()
+        return
+
+    print("\nAnalisando o último log de sincronização...\n")
+    
+    lstat_errors = 0
+    etag_errors = 0
+    resync_requests = 0
+    other_errors = 0
+    total_errors = 0
+
+    with open(sync_report, "r", encoding="utf-8") as f:
+        for line in f:
+            line_lower = line.lower()
+            if "error :" in line or "failed to" in line_lower or "critical error" in line_lower:
+                total_errors += 1
+                if "lstat" in line_lower and "no such file or directory" in line_lower:
+                    lstat_errors += 1
+                elif "409 conflict" in line_lower or "etag mismatch" in line_lower:
+                    etag_errors += 1
+                elif "cannot find prior path1 or path2 listings" in line_lower:
+                    resync_requests += 1
+                else:
+                    other_errors += 1
+
+    if total_errors == 0:
+        print("✨ Excelente! Não encontramos nenhum erro no último relatório.")
+        print("Seu ecossistema está perfeitamente sincronizado e saudável.")
+    else:
+        print(f"⚠️  O motor encontrou {total_errors} indícios de problemas no último relatório.\n")
+        
+        if lstat_errors > 0:
+            print(f"🔹 {lstat_errors}x Erros de 'Arquivo não encontrado' (lstat):")
+            print("   Causa: O Rclone viu o arquivo, mas não conseguiu acessá-lo na hora do upload.")
+            print("   Motivo: Uso de caracteres proibidos em nuvens ou atalhos quebrados.")
+            print("   💊 SOLUÇÃO: Use a Opção 9 (Higienizar Nomes) para limpar a pasta afetada.\n")
+
+        if etag_errors > 0:
+            print(f"🔹 {etag_errors}x Erros de 'Conflito de eTag' (409 Conflict):")
+            print("   Causa: A nuvem modificou o arquivo gerando miniaturas assim que ele chegou.")
+            print("   Motivo: É um erro de ansiedade da nuvem. O arquivo está a salvo.")
+            print("   💊 SOLUÇÃO: Apenas rode a sincronização novamente para atualizar a validação.\n")
+
+        if resync_requests > 0:
+            print(f"🔹 {resync_requests}x Pedidos de 'Varredura de Cura' (Resync):")
+            print("   Causa: O histórico de sincronização foi perdido ou desconfigurado.")
+            print("   💊 SOLUÇÃO: O próprio Sync Engine já deve ter corrigido isso automaticamente.\n")
+            
+        if other_errors > 0:
+            print(f"🔹 Outros {other_errors}x Erros variados:")
+            print(f"   Consulte o arquivo {sync_report} para investigar mais a fundo.\n")
+
+    print("-" * 45)
+    pause()
 
 # ==========================================
 # ROTINAS DE SINCRONIZAÇÃO E RELATÓRIOS
@@ -453,16 +623,18 @@ def run_config_wizard():
         print("6. 🚀 Forçar Sincronização Agora (Ao vivo / Reparo)")
         print("7. 🧪 Test-Drive / Dry-Run (Simular Sincronização)")
         print("8. 📊 Relatório de Arquivos Bloqueados por Tamanho")
-        print("9. 🩺 Médico (Diagnóstico do Sistema)")
+        print("9. 🧹 Higienizar Nomes de Arquivos (Corrigir Caracteres)")
+        print("10. 🔎 Analisar Erros da Última Sincronização")
+        print("11. 🩺 Médico (Diagnóstico do Sistema)")
         print("\n--- Controle do Motor e Sistema ---")
-        print("10. ▶️  Ligar Motor (Start)")
-        print("11. ⏹️  Desligar Motor (Stop)")
-        print("12. ℹ️  Ver Status do Motor (Status)")
-        print("13. 🔄 Atualizar Sync Engine (Verificar Updates)")
-        print("\n14. Sair")
+        print("12. ▶️  Ligar Motor (Start)")
+        print("13. ⏹️  Desligar Motor (Stop)")
+        print("14. ℹ️  Ver Status do Motor (Status)")
+        print("15. 🔄 Atualizar Sync Engine (Verificar Updates)")
+        print("\n16. Sair")
         print("="*45)
         
-        escolha = input("Escolha uma opção (1-14): ").strip()
+        escolha = input("Escolha uma opção (1-16): ").strip()
         
         if escolha == '1':
             clear_screen()
@@ -665,12 +837,14 @@ def run_config_wizard():
         elif escolha == '6': run_now(); pause()
         elif escolha == '7': run_dry_run(); pause()
         elif escolha == '8': run_size_report(); pause()
-        elif escolha == '9': run_doctor()
-        elif escolha == '10': clear_screen(); manage_service("start"); pause()
-        elif escolha == '11': clear_screen(); manage_service("stop"); pause()
-        elif escolha == '12': clear_screen(); manage_service("status"); pause()
-        elif escolha == '13': run_update()
-        elif escolha == '14': clear_screen(); print("Saindo... Até logo!\n"); break
+        elif escolha == '9': run_filename_cleaner()
+        elif escolha == '10': run_analyze_errors()
+        elif escolha == '11': run_doctor()
+        elif escolha == '12': clear_screen(); manage_service("start"); pause()
+        elif escolha == '13': clear_screen(); manage_service("stop"); pause()
+        elif escolha == '14': clear_screen(); manage_service("status"); pause()
+        elif escolha == '15': run_update()
+        elif escolha == '16': clear_screen(); print("Saindo... Até logo!\n"); break
         else: print("❌ Opção inválida."); time.sleep(1)
 
 # ==========================================
@@ -829,6 +1003,8 @@ Comandos Principais:
   config         Assistente interativo (Contas, Filtros e Limites).
   now            🚀 Sincroniza AGORA (força o envio/download imediato).
   test           🧪 Simula sincronização (Dry-Run) sem alterar nada.
+  clean          🧹 Inicia o higienizador de nomes de arquivos.
+  analyze        🔎 Analisa o log da última sincronização para dar dicas de erros.
   doctor         🩺 Diagnóstico de sistema (verifica rclone, systemd, etc).
   update         🔄 Verifica e instala novas atualizações do GitHub.
 
@@ -854,6 +1030,8 @@ if __name__ == "__main__":
         elif comando == "config": run_config_wizard()
         elif comando == "now": run_now()
         elif comando == "test": run_dry_run()
+        elif comando == "clean": run_filename_cleaner()
+        elif comando == "analyze": run_analyze_errors()
         elif comando == "doctor": run_doctor()
         elif comando == "update": run_update()
         elif comando == "start": manage_service("start")
