@@ -8,7 +8,18 @@ import time
 import fnmatch
 import logging
 import shutil
+import urllib.request
+import tempfile
+import zipfile
+import re
 from logging.handlers import RotatingFileHandler
+
+# ==========================================
+# VARIÁVEIS DE VERSÃO E AUTO-UPDATE
+# ==========================================
+VERSION = "3.4"
+UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
+UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
 # ==========================================
 # DIRETÓRIOS E LOGS XDG
@@ -98,7 +109,7 @@ def run_doctor():
     pause()
 
 # ==========================================
-# GERENCIADOR DE SERVIÇOS E AÇÕES IMEDIATAS
+# GERENCIADOR DE SERVIÇOS E AUTO-UPDATE
 # ==========================================
 def manage_service(action):
     SERVICE = "sync-engine.service"
@@ -109,7 +120,7 @@ def manage_service(action):
             subprocess.run(["systemctl", "--user", "enable", "--now", SERVICE], check=False)
             print("✅ Sucesso! O motor agora está rodando de forma invisível.")
         elif action == "stop":
-            print("\n🛑 Desligando e desinstalando o Motor deste usuário...")
+            print("\n🛑 Desligando o Motor...")
             subprocess.run(["systemctl", "--user", "disable", "--now", SERVICE], check=False)
             print("✅ Sucesso! O motor foi parado.")
         elif action == "status":
@@ -125,6 +136,83 @@ def manage_service(action):
     except Exception as e:
         print(f"Erro ao interagir com o sistema: {e}")
 
+def run_update():
+    clear_screen()
+    print("="*45)
+    print("🔄 VERIFICADOR DE ATUALIZAÇÕES")
+    print("="*45)
+    print(f"Versão local:  {VERSION}")
+    print("Buscando versão mais recente no GitHub...\n")
+    
+    remote_version = None
+    try:
+        req = urllib.request.Request(UPDATE_URL_RAW, headers={'Cache-Control': 'no-cache'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            content = response.read().decode('utf-8')
+            match = re.search(r'^VERSION\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+            if match:
+                remote_version = match.group(1)
+    except Exception as e:
+        print(f"❌ Erro de rede ao buscar atualização: {e}")
+        pause()
+        return
+
+    if not remote_version:
+        print("❌ Não foi possível identificar a versão no servidor.")
+        pause()
+        return
+
+    print(f"Versão remota: {remote_version}\n")
+    
+    if remote_version == VERSION:
+        print("✅ Você já está utilizando a versão mais recente!")
+        pause()
+        return
+        
+    print("🎉 Uma nova versão está disponível!")
+    resp = input("Deseja baixar e instalar a atualização agora? (S/N): ").strip().lower()
+    if resp != 's':
+        return
+        
+    print("\n📥 Baixando pacote de atualização...")
+    try:
+        tmp_dir = tempfile.mkdtemp()
+        zip_path = os.path.join(tmp_dir, "update.zip")
+        
+        req = urllib.request.Request(UPDATE_URL_ZIP, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+            
+        print("📦 Extraindo arquivos...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(tmp_dir)
+            
+        extract_dir = os.path.join(tmp_dir, "sync-engine-main")
+        install_script = os.path.join(extract_dir, "install.sh")
+        
+        if os.path.exists(install_script):
+            os.chmod(install_script, 0o755)
+            print("\n🛑 Parando o motor atual antes de atualizar...")
+            manage_service("stop")
+            
+            print("\n🚀 Iniciando instalador (Pode ser solicitada a senha sudo):")
+            subprocess.run(["sudo", "./install.sh"], cwd=extract_dir)
+            
+            print("\n✅ Atualização concluída com sucesso!")
+            print("⚠️  Aviso: Não se esqueça de rodar 'sync-engine start' para religar o motor.")
+        else:
+            print("\n❌ Erro: Arquivo install.sh não encontrado no pacote baixado.")
+            
+        shutil.rmtree(tmp_dir)
+        pause()
+        
+    except Exception as e:
+        print(f"\n❌ Erro durante o processo de atualização: {e}")
+        pause()
+
+# ==========================================
+# ROTINAS DE SINCRONIZAÇÃO E RELATÓRIOS
+# ==========================================
 def run_now():
     clear_screen()
     print("="*45)
@@ -323,7 +411,6 @@ def run_size_report():
             generate_filters(db_connection, filter_file, acc.get("IGNORE_PATTERNS", []))
             db_connection.close()
 
-            # Busca Local
             tee("  💻 No Computador Local:")
             cmd_local = ["rclone", "ls", local_dir, f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
             res_local = subprocess.run(cmd_local, capture_output=True, text=True)
@@ -333,7 +420,6 @@ def run_size_report():
             else:
                 tee("     (Nenhum arquivo local excede o limite estipulado)")
 
-            # Busca Nuvem
             tee("\n  ☁️  Na Nuvem:")
             cmd_remote = ["rclone", "ls", f"{remote_name}:", f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
             res_remote = subprocess.run(cmd_remote, capture_output=True, text=True)
@@ -355,7 +441,7 @@ def run_config_wizard():
     
     while True:
         clear_screen()
-        print("=== Assistente do Sync Engine ===")
+        print(f"=== Assistente do Sync Engine (v{VERSION}) ===")
         print("\n" + "="*45)
         print("--- Configuração de Contas ---")
         print("1. Adicionar nova conta (Nuvem via Rclone)")
@@ -368,14 +454,15 @@ def run_config_wizard():
         print("7. 🧪 Test-Drive / Dry-Run (Simular Sincronização)")
         print("8. 📊 Relatório de Arquivos Bloqueados por Tamanho")
         print("9. 🩺 Médico (Diagnóstico do Sistema)")
-        print("\n--- Controle do Motor em Fundo ---")
+        print("\n--- Controle do Motor e Sistema ---")
         print("10. ▶️  Ligar Motor (Start)")
         print("11. ⏹️  Desligar Motor (Stop)")
         print("12. ℹ️  Ver Status do Motor (Status)")
-        print("\n13. Sair")
+        print("13. 🔄 Atualizar Sync Engine (Verificar Updates)")
+        print("\n14. Sair")
         print("="*45)
         
-        escolha = input("Escolha uma opção (1-13): ").strip()
+        escolha = input("Escolha uma opção (1-14): ").strip()
         
         if escolha == '1':
             clear_screen()
@@ -582,7 +669,8 @@ def run_config_wizard():
         elif escolha == '10': clear_screen(); manage_service("start"); pause()
         elif escolha == '11': clear_screen(); manage_service("stop"); pause()
         elif escolha == '12': clear_screen(); manage_service("status"); pause()
-        elif escolha == '13': clear_screen(); print("Saindo... Até logo!\n"); break
+        elif escolha == '13': run_update()
+        elif escolha == '14': clear_screen(); print("Saindo... Até logo!\n"); break
         else: print("❌ Opção inválida."); time.sleep(1)
 
 # ==========================================
@@ -732,8 +820,8 @@ def send_notification(title, message, urgency="normal"):
 # MÓDULO DE AJUDA (HELP)
 # ==========================================
 def print_help():
-    ajuda = """
-=== Sync Engine Multi-Contas 3.0 (Rclone) ===
+    ajuda = f"""
+=== Sync Engine Multi-Contas (v{VERSION}) ===
 
 Uso: sync-engine [COMANDO]
 
@@ -742,6 +830,7 @@ Comandos Principais:
   now            🚀 Sincroniza AGORA (força o envio/download imediato).
   test           🧪 Simula sincronização (Dry-Run) sem alterar nada.
   doctor         🩺 Diagnóstico de sistema (verifica rclone, systemd, etc).
+  update         🔄 Verifica e instala novas atualizações do GitHub.
 
 Gerenciamento do Motor de Fundo:
   start          LIGA o serviço em segundo plano (inicia com o sistema).
@@ -764,6 +853,7 @@ if __name__ == "__main__":
         elif comando == "now": run_now()
         elif comando == "test": run_dry_run()
         elif comando == "doctor": run_doctor()
+        elif comando == "update": run_update()
         elif comando == "start": manage_service("start")
         elif comando == "stop": manage_service("stop")
         elif comando == "status": manage_service("status")

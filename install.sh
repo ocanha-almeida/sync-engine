@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 # Garante que o script seja executado como root (sudo)
 if [ "$EUID" -ne 0 ]; then
   echo "❌ Por favor, execute como root: sudo ./install.sh"
