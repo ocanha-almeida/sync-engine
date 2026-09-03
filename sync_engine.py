@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "3.7"
+VERSION = "3.9"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -234,10 +234,14 @@ def run_filename_cleaner():
     if op == 'c': return
 
     alvo = ""
+    ignore_patterns = []
+    
     if op == '0':
         alvo = input("\nDigite o caminho completo da pasta (ex: ~/Músicas): ").strip()
     elif op.isdigit() and 1 <= int(op) <= len(ACCOUNTS):
-        alvo = ACCOUNTS[int(op)-1]["LOCAL_DIR"]
+        conta = ACCOUNTS[int(op)-1]
+        alvo = conta["LOCAL_DIR"]
+        ignore_patterns = conta.get("IGNORE_PATTERNS", [])
     else:
         print("❌ Opção inválida."); time.sleep(1.5); return
 
@@ -247,7 +251,7 @@ def run_filename_cleaner():
         pause()
         return
 
-    print("\n🔍 Analisando diretório... Aguarde.\n")
+    print("\n🔍 Analisando diretório e aplicando filtros de exclusão... Aguarde.\n")
     substituicoes = {
         "‛‛": "", "‛": "'", "＂": "", "｜": "-", "⧸": "-",
         "：": "-", "？": "", "＊": "", "★": "", "✬": "", "☆": ""
@@ -256,7 +260,40 @@ def run_filename_cleaner():
     arquivos_para_renomear = []
     
     for root, dirs, files in os.walk(alvo_expandido):
+        rel_root = os.path.relpath(root, alvo_expandido)
+        if rel_root == '.': rel_root = ""
+
+        # 1. Ignora pastas marcadas com .nosync
+        if '.nosync' in files:
+            dirs.clear() # Impede que o Python desça nas subpastas
+            continue
+
+        # 2. Aplica as regras de exclusão (IGNORE_PATTERNS) nas pastas
+        dirs_to_keep = []
+        for d in dirs:
+            rel_path = os.path.join(rel_root, d) if rel_root else d
+            ignored = False
+            for p in ignore_patterns:
+                if p.startswith('/'):
+                    if fnmatch.fnmatch(rel_path, p[1:]): ignored = True; break
+                else:
+                    if fnmatch.fnmatch(d, p): ignored = True; break
+            if not ignored:
+                dirs_to_keep.append(d)
+        dirs[:] = dirs_to_keep
+
+        # 3. Aplica regras nos arquivos e prepara a renomeação
         for nome in files:
+            rel_path = os.path.join(rel_root, nome) if rel_root else nome
+            ignored = False
+            for p in ignore_patterns:
+                if p.startswith('/'):
+                    if fnmatch.fnmatch(rel_path, p[1:]): ignored = True; break
+                else:
+                    if fnmatch.fnmatch(nome, p): ignored = True; break
+            if ignored:
+                continue
+
             novo_nome = nome
             for ruim, bom in substituicoes.items():
                 novo_nome = novo_nome.replace(ruim, bom)
@@ -277,11 +314,13 @@ def run_filename_cleaner():
 
     print(f"⚠️ Encontrados {len(arquivos_para_renomear)} arquivos com caracteres inválidos.\n")
     print("--- PRÉ-VISUALIZAÇÃO (Exibindo até 10 exemplos) ---")
-    for _, _, antigo, novo in arquivos_para_renomear[:10]:
-        print(f" DE:   {antigo}\n PARA: {novo}\n")
+    for caminho_antigo, _, nome, novo_nome in arquivos_para_renomear[:10]:
+        print(f" 📁 Em:   {os.path.dirname(caminho_antigo)}")
+        print(f"    De:   {nome}")
+        print(f"    Para: {novo_nome}\n")
     
     if len(arquivos_para_renomear) > 10:
-        print(f"... e mais {len(arquivos_para_renomear) - 10} arquivos.\n")
+        print(f"... e mais {len(arquivos_para_renomear) - 10} arquivos ocultados na prévia.\n")
 
     confirma = input(f"Confirma a alteração destes {len(arquivos_para_renomear)} arquivos? (S/N): ").strip().lower()
     if confirma != 's':
@@ -289,7 +328,7 @@ def run_filename_cleaner():
         pause()
         return
 
-    print("\nIniciando renomeação e gerando relatório...")
+    print("\nIniciando renomeação e gerando relatório detalhado...")
     report_dir = get_report_dir(config)
     report_path = os.path.join(report_dir, "ultimo_relatorio_higienizacao.txt")
     renomeados = 0
@@ -301,12 +340,15 @@ def run_filename_cleaner():
         f.write("="*45 + "\n\n")
 
         for caminho_antigo, caminho_novo, nome, novo_nome in arquivos_para_renomear:
+            pasta = os.path.dirname(caminho_antigo)
             try:
                 os.rename(caminho_antigo, caminho_novo)
-                f.write(f"✅ [SUCESSO] De: '{nome}' -> Para: '{novo_nome}'\n")
+                f.write(f"📁 Pasta: {pasta}\n")
+                f.write(f"   ✅ [SUCESSO] De: '{nome}' -> Para: '{novo_nome}'\n\n")
                 renomeados += 1
             except Exception as e:
-                f.write(f"❌ [ERRO] Falha em '{nome}': {e}\n")
+                f.write(f"📁 Pasta: {pasta}\n")
+                f.write(f"   ❌ [ERRO] Falha em '{nome}': {e}\n\n")
 
     print(f"\n🎉 Concluído! {renomeados} arquivos foram higienizados.")
     print(f"📂 Relatório completo salvo em: {report_path}")
