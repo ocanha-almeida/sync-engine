@@ -12,6 +12,9 @@ Born from the need to overcome the limitations of traditional cloud clients for 
 
 *   **Smart Bidirectional Blocking (`.nosync`):** Create an empty file named `.nosync` inside any folder (whether on your local machine **or directly in the cloud**) and the engine will instantly ignore it. Remote scanning ensures unwanted cloud directories are never accidentally downloaded, without needing to edit global config files.
 *   **Interactive CLI Wizard:** A 13-option menu to manage accounts, filters, services, and generate reports.
+*   **Native Filename Cleaner (`clean`):** Scans your local folders for special characters that cause cloud upload errors. It shows a safe preview, strictly respects your filter rules and `.nosync` flags, requires user confirmation, and generates a detailed modification report.
+*   **Error Analyzer (`analyze`):** Forget confusing logs. The engine reads Rclone failure reports and translates common issues (like *eTag Mismatches* or stuck *Lock Files*) into human-readable diagnostics and actionable solutions.
+*   **Auto-Updater (`update`):** Checks for, downloads, and installs the latest version of the script directly from the GitHub repository with a single command.
 *   **Multi-Account Support:** Connect Google Drive, OneDrive, Dropbox, S3, or any other provider supported by Rclone simultaneously.
 *   **Advanced Filters:** Define global exclusions using wildcards, file size limits (`MAX_SIZE`), and bandwidth limits (`BW_LIMIT`).
 *   **Background Service (Systemd):** Runs silently at the user level (no root required for daily syncing).
@@ -62,13 +65,15 @@ Basic usage: `sync-engine [COMMAND]`
 | Command | Description |
 | :--- | :--- |
 | `config` | Opens the Interactive Wizard (Main menu). |
-| `now` | 🚀 Sync NOW. Displays a progress bar and forces immediate upload/download. |
-| `test` | 🧪 Starts simulation mode (Dry-Run). Does not alter any files. |
-| `doctor` | 🩺 Runs a system diagnostic to verify dependencies and permissions. |
-| `start` | TURNS ON the background service (Engine will start on boot). |
-| `stop` | TURNS OFF and removes the background service from memory. |
-| `status` | Displays current `systemd` service status and recent logs. |
-| `help` (or `-h`) | Displays the help message and command list. |
+| `now` | 🚀 Forces an immediate Sync (displays progress bar). |
+| `test` | 🧪 Starts Dry-Run mode (Safe simulation, alters nothing). |
+| `clean` | 🧹 Starts the filename cleaner (Generates report & respects filters). |
+| `analyze` | 🔎 Analyzes the last manual sync log to provide error diagnostics. |
+| `doctor` | 🩺 Runs a system health check (dependencies and permissions). |
+| `update` | 🔄 Downloads and installs the latest version from GitHub. |
+| `start` / `stop` | TURNS ON or OFF the invisible `systemd` background service. |
+| `status` | Displays the current service status and recent logs. |
+| `version` (`-v`)| Shows the current engine version. |
 
 ---
 
@@ -98,6 +103,16 @@ Applies broad rules to all folders within an account. Supports advanced syntaxes
 *   **Text wildcard (`*`):** `*.tmp` (Blocks all files ending with `.tmp`).
 *   **Character wildcard (`?`):** `cam_?.dav` (Blocks `cam_1.dav`, `cam_A.dav`, etc).
 *   **Root Anchor (`/`):** `/Backups` (Blocks the "Backups" folder, but *only* if it is in the root of your cloud/main folder. A folder named `Photos/Backups` will still sync normally).
+
+---
+
+## 💡 Automatic Continuous Server (Linger)
+
+By default Linux security rules, user-level services only start when you type your password at the login screen. 
+
+To turn your PC into a true "server", **the installation script automatically enables the Linger feature** (`loginctl enable-linger`). This allows the sync engine to start immediately after system boot, even if the machine is left at the lock screen.
+
+*Note: When uninstalling Sync Engine, Linger is not deactivated from your user account. We chose to keep it active as it is a valuable permission should you wish to run other applications and background services in the future.*
 
 ---
 

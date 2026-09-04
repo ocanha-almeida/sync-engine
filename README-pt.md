@@ -12,12 +12,16 @@ Nascido da necessidade de superar as limitações de clientes tradicionais para 
 
 *   **Bloqueio Inteligente Bidirecional (`.nosync`):** Crie um arquivo vazio chamado `.nosync` dentro de qualquer pasta (seja no seu computador **ou direto na nuvem**) para que o motor a ignore instantaneamente. A leitura remota garante que diretórios indesejados na nuvem nunca sejam baixados acidentalmente, sem a necessidade de editar arquivos de configuração globais.
 *   **Assistente CLI Interativo:** Um menu de 13 opções para gerenciar contas, filtros, serviços e gerar relatórios.
+*   **Higienizador Nativo (`clean`):** Varre suas pastas locais em busca de caracteres especiais que causam erros de upload na nuvem. Exibe uma pré-visualização, respeita rigorosamente suas regras de filtro e `.nosync`, exige confirmação do usuário e gera um relatório detalhado de alterações.
+*   **Analisador de Erros (`analyze`):** Esqueça logs confusos. O motor lê os relatórios de falha do Rclone e traduz problemas comuns (como *eTag Mismatch* ou *Lock Files* emperrados) em diagnósticos e soluções fáceis de aplicar.
+*   **Auto-Atualizador (`update`):** Verifica, baixa e instala novas versões do script diretamente do repositório no GitHub com um único comando.
 *   **Suporte Multi-Contas:** Conecte simultaneamente Google Drive, OneDrive, Dropbox, S3, ou qualquer outro provedor suportado pelo Rclone.
 *   **Filtros Avançados:** Defina exclusões globais utilizando curingas, limite de tamanho de arquivo (`MAX_SIZE`) e limite de uso de banda (`BW_LIMIT`).
 *   **Serviço em Segundo Plano (Systemd):** Roda de forma invisível no seu usuário (sem necessidade de root para a sincronização diária).
 *   **Relatórios Exportáveis:** Gere relatórios seguros de simulação (Dry-Run), histórico de sincronizações manuais e listagens de arquivos bloqueados por tamanho, salvos em texto puro na pasta de sua escolha.
 *   **Notificações no Desktop:** Avisos nativos do Linux (via `notify-send`) sobre sucesso ou erros na sincronização.
 *   **Auto-Cura (Auto-Resync):** O script detecta falhas críticas da API (como quebras no histórico do Rclone) e realiza a varredura de cura automaticamente.
+*   **Serviço em Segundo Plano (Systemd):** Roda invisível no seu nível de usuário, com suporte a inicialização automática desde o boot.
 
 ---
 
@@ -64,9 +68,12 @@ Uso básico: `sync-engine [COMANDO]`
 | `config` | Abre o Assistente Interativo (Menu principal). |
 | `now` | 🚀 Sincroniza AGORA. Exibe barra de progresso e força o envio/download imediato. |
 | `test` | 🧪 Inicia o modo de simulação (Dry-Run). Não altera nenhum arquivo. |
+| `clean` | 🧹 Inicia o higienizador de nomes de arquivos (Gera relatório e respeita filtros). |
+| `analyze` | 🔎 Analisa o log da última sincronização manual para dar diagnósticos de erros. |
 | `doctor` | 🩺 Executa um diagnóstico de sistema verificando dependências e permissões. |
-| `start` | LIGA o serviço em segundo plano (O motor iniciará com o sistema operacional). |
-| `stop` | DESLIGA e remove o serviço em segundo plano da memória. |
+| `update` | 🔄 Baixa e instala a última versão disponível no GitHub. |
+| `start` / `stop`| LIGA ou DESLIGA o serviço invisível `systemd` em segundo plano. |
+| `status` | Exibe o status atual do serviço e os últimos logs gerados. |
 | `status` | Exibe o status atual do serviço `systemd` e os últimos logs gerados. |
 | `help` (ou `-h`) | Exibe a mensagem de ajuda e a lista de comandos no terminal. |
 
@@ -98,6 +105,16 @@ Aplica regras gerais para todas as pastas da sua conta. Suporta as seguintes sin
 *   **Curinga de Texto (`*`):** `*.tmp` (Bloqueia todos os arquivos que terminem com `.tmp`).
 *   **Curinga de Caractere (`?`):** `cam_?.dav` (Bloqueia `cam_1.dav`, `cam_A.dav`, etc).
 *   **Ancoragem na Raiz (`/`):** `/Backups` (Bloqueia a pasta "Backups", mas *apenas* se ela estiver na raiz da sua nuvem/pasta principal. Uma pasta chamada `Fotos/Backups` será sincronizada normalmente).
+
+---
+
+## 💡 Servidor Contínuo Automático (Linger)
+
+Por padrão de segurança do Linux, serviços atrelados ao usuário só iniciam quando você digita sua senha na tela de login. 
+
+Para transformar seu PC num verdadeiro "servidor", **o script de instalação ativa automaticamente o recurso Linger** (`loginctl enable-linger`). Isso permite que o motor de sincronização inicie imediatamente após o *boot* do sistema, mesmo que a máquina fique parada na tela de bloqueio.
+
+*Nota: Ao desinstalar o Sync Engine, o Linger não é desativado do seu usuário. Optamos por mantê-lo ativo, pois é uma permissão valiosa caso você deseje rodar outros aplicativos e serviços em segundo plano no futuro.*
 
 ---
 
