@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "4.1"
+VERSION = "4.2"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -362,15 +362,40 @@ def run_analyze_errors():
 
     config = load_config()
     report_dir = get_report_dir(config)
-    sync_report = os.path.join(report_dir, "ultima_sincronizacao_manual.txt")
+    
+    # Busca relatórios disponíveis
+    logs_disponiveis = []
+    
+    manual_log = os.path.join(report_dir, "ultima_sincronizacao_manual.txt")
+    if os.path.exists(manual_log):
+        logs_disponiveis.append(("Sincronização Manual (Opção 6)", manual_log))
+        
+    ACCOUNTS = config.get("ACCOUNTS", [])
+    for acc in ACCOUNTS:
+        safe_name = "".join([c for c in acc['PROFILE_NAME'].lower().replace(" ", "_") if c.isalnum() or c=='_'])
+        auto_log = os.path.join(report_dir, f"ultimo_ciclo_auto_{safe_name}.txt")
+        if os.path.exists(auto_log):
+            logs_disponiveis.append((f"Ciclo Automático: {acc['PROFILE_NAME']}", auto_log))
 
-    if not os.path.exists(sync_report):
+    if not logs_disponiveis:
         print("\n❌ Nenhum relatório de sincronização encontrado.")
-        print("Execute a 'Opção 6 (Sincronizar Agora)' primeiro para gerar dados.")
         pause()
         return
 
-    print("\nAnalisando o último log de sincronização...\n")
+    print("\nEscolha qual relatório deseja analisar:\n")
+    for i, (nome, caminho) in enumerate(logs_disponiveis):
+        print(f"  [{i+1}] {nome}")
+    print("  [C] Cancelar")
+
+    op = input("\nOpção: ").strip().lower()
+    if op == 'c': return
+    
+    if not (op.isdigit() and 1 <= int(op) <= len(logs_disponiveis)):
+        print("❌ Opção inválida."); time.sleep(1.5); return
+        
+    sync_report = logs_disponiveis[int(op)-1][1]
+    
+    print(f"\nLendo log selecionado...\n")
     
     lstat_errors = 0
     etag_errors = 0
@@ -400,7 +425,6 @@ def run_analyze_errors():
                     total_errors += 1
                     if ".lck" in line:
                         try:
-                            # Tenta extrair o caminho exato do cadeado sugerido pelo Rclone
                             lock_file_path = line.split("prior lock file found:")[1].strip()
                         except IndexError:
                             pass
@@ -417,7 +441,7 @@ def run_analyze_errors():
         if lock_errors > 0:
             print(f"🔹 {lock_errors}x Erros de 'Cadeado Trancado' (Lock File):")
             print("   Causa: Uma sincronização anterior foi interrompida à força e o cadeado ficou preso no sistema.")
-            print("   💊 SOLUÇÃO: O Motor Sync-Engine (v4.1) agora remove essas travas automaticamente. Rode a Opção 6 de novo.\n")
+            print("   💊 SOLUÇÃO: O Motor Sync-Engine (v4.2) agora remove essas travas automaticamente. Apenas aguarde o próximo ciclo.\n")
 
         if lstat_errors > 0:
             print(f"🔹 {lstat_errors}x Erros de 'Arquivo não encontrado' (lstat):")
@@ -438,7 +462,7 @@ def run_analyze_errors():
             
         if other_errors > 0:
             print(f"🔹 Outros {other_errors}x Erros variados:")
-            print(f"   Consulte o arquivo {sync_report} para investigar mais a fundo.\n")
+            print(f"   Consulte o arquivo gerado para investigar mais a fundo.\n")
 
     print("-" * 45)
     pause()
@@ -466,7 +490,7 @@ def run_now():
 
     with open(MANUAL_SYNC_REPORT_FILE, "w", encoding="utf-8") as f:
         f.write("="*45 + "\n")
-        f.write("🚀 RELATÓRIO DE SINCRONIZAÇÃO MANUAL\n")
+        f.write("🚀 RELATÓRIO DE SINCRONIZAÇÃO MANUAL (DETALHADO)\n")
         f.write(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
         f.write("="*45 + "\n\n")
 
@@ -498,11 +522,12 @@ def run_now():
         generate_filters(db_connection, filter_file, acc.get("IGNORE_PATTERNS", []))
         db_connection.close()
 
+        # Removido --log-level=INFO em favor de -v (Verbose total para o log)
         cmd = [
             "rclone", "bisync", local_dir, f"{remote_name}:",
             f"--filter-from={filter_file}", "--transfers=16", "--checkers=16",
-            "--create-empty-src-dirs", "--fix-case", "-P",
-            f"--log-file={MANUAL_SYNC_REPORT_FILE}", "--log-level=INFO"
+            "--create-empty-src-dirs", "--fix-case", "-P", "-v",
+            f"--log-file={MANUAL_SYNC_REPORT_FILE}"
         ]
         if bw_limit != "0": cmd.append(f"--bwlimit={bw_limit}")
         if max_size != "0": cmd.append(f"--max-size={max_size}")
@@ -529,7 +554,6 @@ def run_now():
                     print("🔄 Retomando sincronização...")
                     result = subprocess.run(cmd)
                     
-                    # Atualiza o log em memória caso o segundo run tenha falhado
                     if result.returncode != 0:
                         with open(MANUAL_SYNC_REPORT_FILE, "r", encoding="utf-8") as f_log:
                             log_text = f_log.read()
@@ -550,7 +574,7 @@ def run_now():
             f.write("-" * 45 + "\n\n")
     
     print("\n🎉 Todas as tarefas imediatas foram concluídas!")
-    print(f"📂 Um relatório completo foi salvo em: {MANUAL_SYNC_REPORT_FILE}")
+    print(f"📂 Um relatório detalhado foi salvo em: {MANUAL_SYNC_REPORT_FILE}")
 
 def run_dry_run():
     clear_screen()
@@ -1033,48 +1057,76 @@ def generate_filters(conn, filter_file, ignore_patterns):
     with open(filter_file, "w", encoding="utf-8") as f:
         for line in filters: f.write(line + "\n")
         
-def run_sync(local_dir, remote_name, filter_file, bw_limit="0", max_size="0"):
+def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir, profile_name):
     start_time = time.time()
+    
+    safe_profile = "".join([c for c in profile_name.lower().replace(" ", "_") if c.isalnum() or c=='_'])
+    log_file = os.path.join(report_dir, f"ultimo_ciclo_auto_{safe_profile}.txt")
+    
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write("="*45 + "\n")
+        f.write(f"🔄 RELATÓRIO DE CICLO AUTOMÁTICO (BACKGROUND)\n")
+        f.write(f"Conta: {profile_name}\n")
+        f.write(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
+        f.write("="*45 + "\n\n")
+
     cmd = [
         "rclone", "bisync", local_dir, f"{remote_name}:",
         f"--filter-from={filter_file}", "--transfers=16", "--checkers=16",
-        "--create-empty-src-dirs", "--fix-case", "-v"
+        "--create-empty-src-dirs", "--fix-case", "-v",
+        f"--log-file={log_file}"
     ]
     if bw_limit != "0": cmd.append(f"--bwlimit={bw_limit}")
     if max_size != "0": cmd.append(f"--max-size={max_size}")
 
-    def analyze_output(stderr_text):
-        has_changes = "Copied (" in stderr_text or "Deleted:" in stderr_text or "Moved (" in stderr_text or "Updated:" in stderr_text
-        errors = [line for line in stderr_text.split('\n') if "ERROR" in line]
-        err_msg = errors[0].split("ERROR :")[-1].strip() if errors else "Verifique o log no terminal."
+    def analyze_output(log_text):
+        has_changes = "Copied (" in log_text or "Deleted:" in log_text or "Moved (" in log_text or "Updated:" in log_text
+        errors = [line for line in log_text.split('\n') if "ERROR" in line]
+        err_msg = errors[0].split("ERROR :")[-1].strip() if errors else "Verifique o log detalhado."
         return has_changes, err_msg
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd)
+    
+    with open(log_file, "r", encoding="utf-8") as f:
+        log_text = f.read()
     
     # --- AUTO-UNLOCKER: Tratamento dinâmico no motor de fundo ---
-    if result.returncode != 0 and "prior lock file found" in result.stderr.lower():
-        lock_match = re.search(r'prior lock file found:\s*([^\r\n]+)', result.stderr, re.IGNORECASE)
+    if result.returncode != 0 and "prior lock file found" in log_text.lower():
+        lock_match = re.search(r'prior lock file found:\s*([^\r\n]+)', log_text, re.IGNORECASE)
         if lock_match:
             lock_path = lock_match.group(1).strip()
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"\n⚠️  Trava residual removida automaticamente: {lock_path}\n")
             subprocess.run(["rclone", "deletefile", lock_path])
-            result = subprocess.run(cmd, capture_output=True, text=True) # Tenta de novo na mesma hora
+            
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write("\n🔄 Retomando sincronização...\n")
+            result = subprocess.run(cmd)
+            with open(log_file, "r", encoding="utf-8") as f:
+                log_text = f.read()
     # -----------------------------------------------------------
 
     if result.returncode == 0:
-        has_transfers, _ = analyze_output(result.stderr)
+        has_transfers, _ = analyze_output(log_text)
         return True, time.time() - start_time, has_transfers, ""
     else:
-        if "resync" in result.stderr.lower() or "not found" in result.stderr.lower():
+        if "resync" in log_text.lower() or "not found" in log_text.lower():
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write("\n⚠️ Varredura de cura (--resync) acionada automaticamente...\n")
             cmd.append("--resync")
-            resync_result = subprocess.run(cmd, capture_output=True, text=True)
+            resync_result = subprocess.run(cmd)
+            
+            with open(log_file, "r", encoding="utf-8") as f:
+                resync_log_text = f.read()
+                
             if resync_result.returncode == 0:
-                has_transfers, _ = analyze_output(resync_result.stderr)
+                has_transfers, _ = analyze_output(resync_log_text)
                 return True, time.time() - start_time, has_transfers, ""
             else:
-                _, err_msg = analyze_output(resync_result.stderr)
+                _, err_msg = analyze_output(resync_log_text)
                 return False, 0, False, err_msg
         else:
-            _, err_msg = analyze_output(result.stderr)
+            _, err_msg = analyze_output(log_text)
             return False, 0, False, err_msg
 
 def send_notification(title, message, urgency="normal"):
@@ -1152,6 +1204,7 @@ if __name__ == "__main__":
             BW_LIMIT = config.get("BW_LIMIT", "0")
             MAX_SIZE = config.get("MAX_SIZE", "0")
             ACCOUNTS = config.get("ACCOUNTS", [])
+            report_dir = get_report_dir(config)
             
             if not ACCOUNTS:
                 sys.exit(1)
@@ -1175,7 +1228,7 @@ if __name__ == "__main__":
                 generate_filters(db_connection, filter_file, ignore_patterns)
                 db_connection.close()
                 
-                success, tempo, has_transfers, err_msg = run_sync(local_dir, remote_name, filter_file, BW_LIMIT, MAX_SIZE)
+                success, tempo, has_transfers, err_msg = run_sync(local_dir, remote_name, filter_file, BW_LIMIT, MAX_SIZE, report_dir, profile_name)
                 
                 if success and has_transfers:
                     logger.info(f"[{profile_name}] Transferência concluída em {tempo:.1f}s.")
