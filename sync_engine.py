@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "4.0"
+VERSION = "4.1"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -417,11 +417,7 @@ def run_analyze_errors():
         if lock_errors > 0:
             print(f"🔹 {lock_errors}x Erros de 'Cadeado Trancado' (Lock File):")
             print("   Causa: Uma sincronização anterior foi interrompida à força e o cadeado ficou preso no sistema.")
-            print("   💊 SOLUÇÃO: Copie e cole o comando abaixo no seu terminal para quebrar o cadeado:\n")
-            if lock_file_path:
-                print(f"      rclone deletefile \"{lock_file_path}\"\n")
-            else:
-                print("      rclone deletefile \"~/.cache/rclone/bisync/NOME_DA_CONTA.lck\"\n")
+            print("   💊 SOLUÇÃO: O Motor Sync-Engine (v4.1) agora remove essas travas automaticamente. Rode a Opção 6 de novo.\n")
 
         if lstat_errors > 0:
             print(f"🔹 {lstat_errors}x Erros de 'Arquivo não encontrado' (lstat):")
@@ -517,7 +513,29 @@ def run_now():
         
         result = subprocess.run(cmd)
         
+        # --- AUTO-UNLOCKER: Tratamento dinâmico de trava ---
         if result.returncode != 0:
+            with open(MANUAL_SYNC_REPORT_FILE, "r", encoding="utf-8") as f_log:
+                log_text = f_log.read()
+                
+            if "prior lock file found" in log_text.lower():
+                lock_match = re.search(r'prior lock file found:\s*([^\r\n]+)', log_text, re.IGNORECASE)
+                if lock_match:
+                    lock_path = lock_match.group(1).strip()
+                    print(f"\n⚠️  Trava residual (Lock) detectada. Quebrando cadeado automaticamente...")
+                    with open(MANUAL_SYNC_REPORT_FILE, "a", encoding="utf-8") as f:
+                        f.write(f"⚠️  Trava residual removida automaticamente: {lock_path}\n")
+                    subprocess.run(["rclone", "deletefile", lock_path])
+                    print("🔄 Retomando sincronização...")
+                    result = subprocess.run(cmd)
+                    
+                    # Atualiza o log em memória caso o segundo run tenha falhado
+                    if result.returncode != 0:
+                        with open(MANUAL_SYNC_REPORT_FILE, "r", encoding="utf-8") as f_log:
+                            log_text = f_log.read()
+        # -----------------------------------------------------
+
+        if result.returncode != 0 and ("resync" in locals().get('log_text', '').lower() or "not found" in locals().get('log_text', '').lower()):
             print(f"\n⚠️ Rclone solicitou uma varredura de cura (--resync). Iniciando...")
             with open(MANUAL_SYNC_REPORT_FILE, "a", encoding="utf-8") as f:
                 f.write("⚠️ Varredura de cura (--resync) acionada automaticamente...\n")
@@ -1032,6 +1050,16 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit="0", max_size="0"):
         return has_changes, err_msg
 
     result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    # --- AUTO-UNLOCKER: Tratamento dinâmico no motor de fundo ---
+    if result.returncode != 0 and "prior lock file found" in result.stderr.lower():
+        lock_match = re.search(r'prior lock file found:\s*([^\r\n]+)', result.stderr, re.IGNORECASE)
+        if lock_match:
+            lock_path = lock_match.group(1).strip()
+            subprocess.run(["rclone", "deletefile", lock_path])
+            result = subprocess.run(cmd, capture_output=True, text=True) # Tenta de novo na mesma hora
+    # -----------------------------------------------------------
+
     if result.returncode == 0:
         has_transfers, _ = analyze_output(result.stderr)
         return True, time.time() - start_time, has_transfers, ""
