@@ -48,7 +48,7 @@ apt-get install -y rclone sqlite3 libnotify-bin > /dev/null
 # 2. Cria a pasta no /opt e copia o executável
 echo "Instalando executável em /opt/sync-engine/..."
 mkdir -p /opt/sync-engine
-cp sync_engine.py /opt/sync-engine/
+cp *.py /opt/sync-engine/
 chmod +x /opt/sync-engine/sync_engine.py
 
 # 3. Cria o Serviço de Sistema (Desligado por padrão)

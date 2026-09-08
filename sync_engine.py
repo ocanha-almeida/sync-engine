@@ -12,12 +12,25 @@ import urllib.request
 import tempfile
 import zipfile
 import re
+import platform
 from logging.handlers import RotatingFileHandler
+
+# ==========================================
+# IMPORTAÇÃO DINÂMICA DO SISTEMA OPERACIONAL
+# ==========================================
+SISTEMA = platform.system()
+if SISTEMA == "Linux":
+    import os_linux as sys_tools
+elif SISTEMA == "Windows":
+    import os_windows as sys_tools
+else:
+    print(f"❌ Erro crítico: O sistema operacional '{SISTEMA}' não é suportado pelo Sync Engine.")
+    sys.exit(1)
 
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "4.5"
+VERSION = "5.0"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -82,13 +95,31 @@ def clear_screen():
 def pause():
     input("\nPressione Enter para continuar...")
 
+def clean_log_text(text):
+    cleaned = []
+    skip = False
+    for line in text.split('\n'):
+        if "Bisyncing with Comparison Settings" in line or "Lockfile info" in line:
+            skip = True
+            continue
+        if skip and line.strip() == "}":
+            skip = False
+            continue
+        if skip:
+            continue
+        if "Setting --ignore-listing-checksum" in line:
+            continue
+        if "Valid lock file found" in line:
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
 def clean_log_file(file_path):
     try:
         if not os.path.exists(file_path): return
         with open(file_path, "r", encoding="utf-8") as f:
             text = f.read()
         
-        # Remove blocos inteiros usando Regex seguro
         text = re.sub(r'Bisyncing with Comparison Settings:\s*\{.*?\}', '', text, flags=re.DOTALL)
         text = re.sub(r'Lockfile info:\s*\{.*?\}', '', text, flags=re.DOTALL)
         
@@ -100,7 +131,6 @@ def clean_log_file(file_path):
             cleaned.append(line)
             
         final_text = "\n".join(cleaned)
-        # Remove excessos de linhas em branco causadas pelas remoções
         final_text = re.sub(r'\n{3,}', '\n\n', final_text)
         
         with open(file_path, "w", encoding="utf-8") as f:
@@ -116,51 +146,17 @@ def run_doctor():
     if shutil.which("rclone"): print("🟢 Rclone: Instalado e pronto.")
     else: print("🔴 Rclone: NÃO ENCONTRADO! Instale antes de continuar.")
 
-    if shutil.which("systemctl"): print("🟢 Systemd: Disponível (Auto-start suportado).")
-    else: print("🔴 Systemd: NÃO ENCONTRADO! (O motor de fundo não funcionará).")
-
-    if shutil.which("notify-send"): print("🟢 Notificações (libnotify): Instalado.")
-    else: print("🟡 Notificações: Ausente (Instale 'libnotify-bin' se quiser alertas).")
-
     try:
         sqlite3.connect(":memory:").close()
         print("🟢 SQLite3: Motor de banco de dados nativo funcionando.")
     except Exception:
         print("🔴 SQLite3: Falha no módulo interno do Python!")
 
-    if os.access(CONFIG_DIR, os.W_OK): print("🟢 Permissões: Acesso total à pasta de configurações.")
-    else: print("🔴 Permissões: Sem acesso de escrita na pasta ~/.config!")
+    # Delega as checagens específicas (como systemd) para o módulo OS correto
+    sys_tools.run_doctor_os(CONFIG_DIR)
 
     print("\n✅ Diagnóstico concluído.")
     pause()
-
-# ==========================================
-# GERENCIADOR DE SERVIÇOS E AUTO-UPDATE
-# ==========================================
-def manage_service(action):
-    SERVICE = "sync-engine.service"
-    try:
-        if action == "start":
-            print("\n⚙️ Ligando e ativando o Motor em segundo plano...")
-            subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-            subprocess.run(["systemctl", "--user", "enable", "--now", SERVICE], check=False)
-            print("✅ Sucesso! O motor agora está rodando de forma invisível.")
-        elif action == "stop":
-            print("\n🛑 Desligando o Motor...")
-            subprocess.run(["systemctl", "--user", "disable", "--now", SERVICE], check=False)
-            print("✅ Sucesso! O motor foi parado.")
-        elif action == "status":
-            print(f"\n📊 Status do Serviço ({SERVICE}):\n")
-            subprocess.run(["systemctl", "--user", "status", SERVICE, "--no-pager"])
-            print(f"\n📝 Últimos registros de Log ({LOG_FILE}):")
-            subprocess.run(["tail", "-n", "10", LOG_FILE])
-        elif action == "reload":
-            check = subprocess.run(["systemctl", "--user", "is-active", SERVICE], capture_output=True, text=True)
-            if check.stdout.strip() == "active":
-                print("🔄 Serviço detectado. Reiniciando automaticamente...")
-                subprocess.run(["systemctl", "--user", "restart", SERVICE], check=False)
-    except Exception as e:
-        print(f"Erro ao interagir com o sistema: {e}")
 
 def run_update():
     clear_screen()
@@ -214,20 +210,9 @@ def run_update():
             zip_ref.extractall(tmp_dir)
             
         extract_dir = os.path.join(tmp_dir, "sync-engine-main")
-        install_script = os.path.join(extract_dir, "install.sh")
         
-        if os.path.exists(install_script):
-            os.chmod(install_script, 0o755)
-            print("\n🛑 Parando o motor atual antes de atualizar...")
-            manage_service("stop")
-            
-            print("\n🚀 Iniciando instalador (Pode ser solicitada a senha sudo):")
-            subprocess.run(["sudo", "./install.sh"], cwd=extract_dir)
-            
-            print("\n✅ Atualização concluída com sucesso!")
-            print("⚠️  Aviso: Não se esqueça de rodar 'sync-engine start' para religar o motor.")
-        else:
-            print("\n❌ Erro: Arquivo install.sh não encontrado no pacote baixado.")
+        # Delega a rotina do instalador (sudo no Linux, UAC no Windows) para o OS local
+        sys_tools.run_update_installer(extract_dir)
             
         shutil.rmtree(tmp_dir)
         pause()
@@ -465,7 +450,7 @@ def run_analyze_errors():
         if lock_errors > 0:
             print(f"🔹 {lock_errors}x Erros de 'Cadeado Trancado' (Lock File):")
             print("   Causa: Uma sincronização anterior foi interrompida à força e o cadeado ficou preso no sistema.")
-            print("   💊 SOLUÇÃO: O Motor Sync-Engine (v4.5) remove essas travas automaticamente. Se persistir, apague o .lck manualmente.\n")
+            print("   💊 SOLUÇÃO: O Motor Sync-Engine (v5.0) remove essas travas automaticamente. Se persistir, apague o .lck manualmente.\n")
 
         if lstat_errors > 0:
             print(f"🔹 {lstat_errors}x Erros de 'Arquivo não encontrado' (lstat):")
@@ -495,7 +480,6 @@ def run_analyze_errors():
 # ROTINAS DE SINCRONIZAÇÃO E RELATÓRIOS
 # ==========================================
 def analyze_sync_logic(log_text):
-    # Avalia mudanças com base em palavras-chave garantidas do Rclone Verbose
     mudancas = ["Copied (", "Deleted:", "Moved (", "Updated:", "Applying changes"]
     has_changes = any(m in log_text for m in mudancas)
     if "resync is required" in log_text.lower() or "resyncing" in log_text.lower():
@@ -656,8 +640,8 @@ def run_dry_run():
             tee("\nLogs do Rclone:\n")
             result = subprocess.run(cmd, capture_output=True, text=True)
             
-            if result.stderr: tee(result.stderr.strip())
-            if result.stdout: tee(result.stdout.strip())
+            if result.stderr: tee(clean_log_text(result.stderr.strip()))
+            if result.stdout: tee(clean_log_text(result.stdout.strip()))
             
             tee(f"\n✅ Fim da simulação para {acc['PROFILE_NAME']}")
             tee("-" * 45)
@@ -838,7 +822,7 @@ def run_config_wizard():
             config.setdefault("ACCOUNTS", []).append(nova_conta)
             save_config(config)
             print(f"\n✅ Conta '{profile}' adicionada com sucesso!")
-            manage_service("reload")
+            sys_tools.manage_service("reload", LOG_FILE)
             pause()
 
         elif escolha == '2':
@@ -876,7 +860,7 @@ def run_config_wizard():
                         try: os.remove(filter_path)
                         except OSError: pass
                     
-                    save_config(config); manage_service("reload")
+                    save_config(config); sys_tools.manage_service("reload", LOG_FILE)
                     print(f"\n🗑️ Conta '{apagada['PROFILE_NAME']}' e arquivos residuais removidos com sucesso!")
                     pause()
                 else: 
@@ -899,18 +883,18 @@ def run_config_wizard():
                 elif op_cfg == '1':
                     novo = input("\nNovo tempo em segundos (ex: 300): ")
                     if novo.isdigit() and int(novo) >= 30:
-                        config["SYNC_INTERVAL"] = int(novo); save_config(config); manage_service("reload")
+                        config["SYNC_INTERVAL"] = int(novo); save_config(config); sys_tools.manage_service("reload", LOG_FILE)
                         print("✅ Intervalo alterado."); pause()
                     else: print("❌ Inválido. Mínimo 30s."); time.sleep(1.5)
                 elif op_cfg == '2':
                     novo = input("\nLimite de banda (ex: 10M, 500K, 0 = ilimitado): ").strip()
                     if novo:
-                        config["BW_LIMIT"] = novo; save_config(config); manage_service("reload")
+                        config["BW_LIMIT"] = novo; save_config(config); sys_tools.manage_service("reload", LOG_FILE)
                         print("✅ Limite de banda alterado."); pause()
                 elif op_cfg == '3':
                     novo = input("\nTamanho máximo de arquivo (ex: 500M, 1G, 0 = ilimitado): ").strip()
                     if novo:
-                        config["MAX_SIZE"] = novo; save_config(config); manage_service("reload")
+                        config["MAX_SIZE"] = novo; save_config(config); sys_tools.manage_service("reload", LOG_FILE)
                         print("✅ Tamanho máximo alterado."); pause()
                 elif op_cfg == '4':
                     print("\nDefina a pasta para salvar os relatórios em texto gerados pelo assistente.")
@@ -948,7 +932,7 @@ def run_config_wizard():
                     acao = input("Escolha uma ação: ").strip().lower()
                     
                     if acao == 'c':
-                        conta["IGNORE_PATTERNS"] = padroes; save_config(config); manage_service("reload")
+                        conta["IGNORE_PATTERNS"] = padroes; save_config(config); sys_tools.manage_service("reload", LOG_FILE)
                         print("\n✅ Filtros salvos!"); pause(); break
                     elif acao == 'a':
                         novo = input("\nDigite o padrão: ").strip()
@@ -978,9 +962,9 @@ def run_config_wizard():
         elif escolha == '9': run_filename_cleaner()
         elif escolha == '10': run_analyze_errors()
         elif escolha == '11': run_doctor()
-        elif escolha == '12': clear_screen(); manage_service("start"); pause()
-        elif escolha == '13': clear_screen(); manage_service("stop"); pause()
-        elif escolha == '14': clear_screen(); manage_service("status"); pause()
+        elif escolha == '12': clear_screen(); sys_tools.manage_service("start", LOG_FILE); pause()
+        elif escolha == '13': clear_screen(); sys_tools.manage_service("stop", LOG_FILE); pause()
+        elif escolha == '14': clear_screen(); sys_tools.manage_service("status", LOG_FILE); pause()
         elif escolha == '15': run_update()
         elif escolha == '16': clear_screen(); print("Saindo... Até logo!\n"); break
         else: print("❌ Opção inválida."); time.sleep(1)
@@ -1162,14 +1146,6 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir
             clean_log_file(log_file)
             return False, 0, False, err_msg
 
-def send_notification(title, message, urgency="normal"):
-    try:
-        env = os.environ.copy()
-        env["DISPLAY"] = ":0"
-        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
-        subprocess.run(["notify-send", title, message, "--urgency", urgency, "--app-name", "Sync Engine", "--icon", "folder-remote"], env=env, check=False)
-    except Exception: pass
-
 # ==========================================
 # MÓDULO DE AJUDA (HELP)
 # ==========================================
@@ -1214,9 +1190,9 @@ if __name__ == "__main__":
         elif comando == "analyze": run_analyze_errors()
         elif comando == "doctor": run_doctor()
         elif comando == "update": run_update()
-        elif comando == "start": manage_service("start")
-        elif comando == "stop": manage_service("stop")
-        elif comando == "status": manage_service("status")
+        elif comando == "start": sys_tools.manage_service("start", LOG_FILE)
+        elif comando == "stop": sys_tools.manage_service("stop", LOG_FILE)
+        elif comando == "status": sys_tools.manage_service("status", LOG_FILE)
         else:
             clear_screen()
             print(f"❌ Erro: Comando desconhecido '{sys.argv[1]}'\n")
@@ -1265,16 +1241,16 @@ if __name__ == "__main__":
                 
                 if success and has_transfers:
                     logger.info(f"[{profile_name}] Transferência concluída em {tempo:.1f}s.")
-                    send_notification(f"Sync: {profile_name}", f"Atualizado com sucesso ({tempo:.1f}s).")
+                    sys_tools.send_notification(f"Sync: {profile_name}", f"Atualizado com sucesso ({tempo:.1f}s).")
                 elif success and not has_transfers:
                     logger.info(f"[{profile_name}] Checagem concluída. Nenhuma alteração detectada.")
                 elif not success:
                     clean_error = err_msg.replace('"', '').replace("'", "")[:120]
                     logger.error(f"[{profile_name}] Falha na sincronização: {clean_error}")
-                    send_notification(f"Erro: {profile_name}", f"Falha: {clean_error}", "critical")
+                    sys_tools.send_notification(f"Erro: {profile_name}", f"Falha: {clean_error}", "critical")
                     
             time.sleep(SYNC_INTERVAL)
             
     except KeyboardInterrupt:
         logger.info("Sincronização interrompida pelo usuário.")
-        send_notification("Sync Engine", "Sincronização desligada.")
+        sys_tools.send_notification("Sync Engine", "Sincronização desligada.")
