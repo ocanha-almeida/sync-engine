@@ -32,7 +32,7 @@ if ($Action -eq "uninstall") {
     
     $path = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::Machine)
     if ($path -like "*$InstallDir*") {
-        $newPath = ($path -split ';' | Where-Object { $_ -ne $InstallDir }) -join ';'
+        $newPath = ($path -split ';' | Where-Object { $_ -ne$InstallDir }) -join ';'
         [Environment]::SetEnvironmentVariable("Path", $newPath, [EnvironmentVariableTarget]::Machine)
         Write-Host "‚úÖ Vari√°vel de ambiente (PATH) do sistema limpa." -ForegroundColor Green
     }
@@ -50,12 +50,13 @@ if (!(Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 }
 
-Copy-Item -Path ".\*.py" -Destination $InstallDir -Force
+# Usa $PSScriptRoot para garantir que pega os .py da mesma pasta do script
+Copy-Item -Path "$PSScriptRoot\*.py" -Destination $InstallDir -Force
 
-# Cria o wrapper execut√°vel para terminal (Usa python padr√£o para mostrar sa√≠da visual)
+# Cria o wrapper execut√°vel para terminal usando ASCII para evitar o bug do BOM
 $BatPath = Join-Path $InstallDir "sync-engine.cmd"
 $BatContent = "@echo off`npython `"$InstallDir\sync_engine.py`" %*"
-Set-Content -Path $BatPath -Value $BatContent -Encoding UTF8
+Set-Content -Path $BatPath -Value$BatContent -Encoding Ascii
 
 Write-Host "‚úÖ Arquivos e m√≥dulos .py copiados para $InstallDir" -ForegroundColor Green
 
@@ -68,7 +69,6 @@ if ($path -notlike "*$InstallDir*") {
 
 # 5. Criar Tarefa Agendada (Equivalente ao Systemd/Linger)
 Write-Host "‚öôÔ∏è  Configurando servi√ßo cont√≠nuo de inicializa√ß√£o (Task Scheduler)..." -ForegroundColor Cyan
-# Usa 'pythonw.exe' (Window-less) para rodar invis√≠vel no fundo!
 $TaskCommand = "pythonw.exe"
 $TaskArgs = "`"$InstallDir\sync_engine.py`""
 
@@ -76,5 +76,84 @@ schtasks /Create /F /TN $TaskName /TR "$TaskCommand $TaskArgs" /SC ONLOGON /RL H
 
 Write-Host "üéâ Instala√ß√£o Conclu√≠da com Sucesso!" -ForegroundColor Green
 Write-Host "üí° Voc√™ j√° pode abrir um novo PowerShell ou CMD e digitar 'sync-engine'." -ForegroundColor Yellow
+Write-Host "`nPressione Enter para sair..."
+Read-Host<#
+.SYNOPSIS
+Instalador do Sync Engine (Windows 10 / 11)
+#>
+
+param (
+    [string]$Action = "install"
+)
+
+# 1. Checagem de Administrador (Pede permiss„o automaticamente)
+if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Warning "? Solicitando privilÈgios de Administrador..."
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $Action" -Verb RunAs
+    exit
+}
+
+# 2. Vari·veis base
+$InstallDir = "C:\opt\sync-engine"
+$TaskName = "SyncEngine_Background"
+
+# 3. Rotina de DesinstalaÁ„o
+if ($Action -eq "uninstall") {
+    Write-Host "?  Desinstalando o Sync Engine do Windows..." -ForegroundColor Yellow
+    
+    schtasks /Delete /TN $TaskName /F *>$null
+    Write-Host "? ServiÁo de fundo removido do Agendador de Tarefas." -ForegroundColor Green
+    
+    if (Test-Path $InstallDir) {
+        Remove-Item -Recurse -Force $InstallDir
+        Write-Host "? DiretÛrio do programa removido ($InstallDir)." -ForegroundColor Green
+    }
+    
+    $path = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::Machine)
+    if ($path -like "*$InstallDir*") {
+        $newPath = ($path -split ';' | Where-Object { $_ -ne$InstallDir }) -join ';'
+        [Environment]::SetEnvironmentVariable("Path", $newPath, [EnvironmentVariableTarget]::Machine)
+        Write-Host "? Vari·vel de ambiente (PATH) do sistema limpa." -ForegroundColor Green
+    }
+    
+    Write-Host "?  Nota: Seus bancos de dados em ~/.config/sync_engine foram mantidos por seguranÁa." -ForegroundColor Cyan
+    Write-Host "`nPressione Enter para sair..."
+    Read-Host
+    exit
+}
+
+# 4. Rotina de InstalaÁ„o Normal
+Write-Host "? Iniciando a instalaÁ„o do Sync Engine (Windows)..." -ForegroundColor Cyan
+
+if (!(Test-Path $InstallDir)) {
+    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+}
+
+# Usa $PSScriptRoot para garantir que pega os .py da mesma pasta do script
+Copy-Item -Path "$PSScriptRoot\*.py" -Destination $InstallDir -Force
+
+# Cria o wrapper execut·vel para terminal usando ASCII para evitar o bug do BOM
+$BatPath = Join-Path $InstallDir "sync-engine.cmd"
+$BatContent = "@echo off`npython `"$InstallDir\sync_engine.py`" %*"
+Set-Content -Path $BatPath -Value$BatContent -Encoding Ascii
+
+Write-Host "? Arquivos e mÛdulos .py copiados para $InstallDir" -ForegroundColor Green
+
+$path = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::Machine)
+if ($path -notlike "*$InstallDir*") {
+    $newPath = $path + ";$InstallDir"
+    [Environment]::SetEnvironmentVariable("Path", $newPath, [EnvironmentVariableTarget]::Machine)
+    Write-Host "? Adicionado ao PATH do Sistema." -ForegroundColor Green
+}
+
+# 5. Criar Tarefa Agendada (Equivalente ao Systemd/Linger)
+Write-Host "?  Configurando serviÁo contÌnuo de inicializaÁ„o (Task Scheduler)..." -ForegroundColor Cyan
+$TaskCommand = "pythonw.exe"
+$TaskArgs = "`"$InstallDir\sync_engine.py`""
+
+schtasks /Create /F /TN $TaskName /TR "$TaskCommand $TaskArgs" /SC ONLOGON /RL HIGHEST *>$null
+
+Write-Host "? InstalaÁ„o ConcluÌda com Sucesso!" -ForegroundColor Green
+Write-Host "? VocÍ j· pode abrir um novo PowerShell ou CMD e digitar 'sync-engine'." -ForegroundColor Yellow
 Write-Host "`nPressione Enter para sair..."
 Read-Host

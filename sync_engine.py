@@ -30,7 +30,7 @@ else:
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "5.0"
+VERSION = "5.1"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -152,7 +152,6 @@ def run_doctor():
     except Exception:
         print("🔴 SQLite3: Falha no módulo interno do Python!")
 
-    # Delega as checagens específicas (como systemd) para o módulo OS correto
     sys_tools.run_doctor_os(CONFIG_DIR)
 
     print("\n✅ Diagnóstico concluído.")
@@ -210,8 +209,6 @@ def run_update():
             zip_ref.extractall(tmp_dir)
             
         extract_dir = os.path.join(tmp_dir, "sync-engine-main")
-        
-        # Delega a rotina do instalador (sudo no Linux, UAC no Windows) para o OS local
         sys_tools.run_update_installer(extract_dir)
             
         shutil.rmtree(tmp_dir)
@@ -273,6 +270,9 @@ def run_filename_cleaner():
     for root, dirs, files in os.walk(alvo_expandido):
         rel_root = os.path.relpath(root, alvo_expandido)
         if rel_root == '.': rel_root = ""
+        
+        # Garante barras em formato Unix para regras
+        rel_root_unix = rel_root.replace("\\", "/")
 
         if '.nosync' in files:
             dirs.clear() 
@@ -280,25 +280,29 @@ def run_filename_cleaner():
 
         dirs_to_keep = []
         for d in dirs:
-            rel_path = os.path.join(rel_root, d) if rel_root else d
+            rel_path = os.path.join(rel_root_unix, d) if rel_root_unix else d
+            rel_path = rel_path.replace("\\", "/")
             ignored = False
             for p in ignore_patterns:
-                if p.startswith('/'):
-                    if fnmatch.fnmatch(rel_path, p[1:]): ignored = True; break
+                p_unix = p.replace("\\", "/")
+                if p_unix.startswith('/'):
+                    if fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
                 else:
-                    if fnmatch.fnmatch(d, p): ignored = True; break
+                    if fnmatch.fnmatch(d, p_unix): ignored = True; break
             if not ignored:
                 dirs_to_keep.append(d)
         dirs[:] = dirs_to_keep
 
         for nome in files:
-            rel_path = os.path.join(rel_root, nome) if rel_root else nome
+            rel_path = os.path.join(rel_root_unix, nome) if rel_root_unix else nome
+            rel_path = rel_path.replace("\\", "/")
             ignored = False
             for p in ignore_patterns:
-                if p.startswith('/'):
-                    if fnmatch.fnmatch(rel_path, p[1:]): ignored = True; break
+                p_unix = p.replace("\\", "/")
+                if p_unix.startswith('/'):
+                    if fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
                 else:
-                    if fnmatch.fnmatch(nome, p): ignored = True; break
+                    if fnmatch.fnmatch(nome, p_unix): ignored = True; break
             if ignored:
                 continue
 
@@ -450,7 +454,7 @@ def run_analyze_errors():
         if lock_errors > 0:
             print(f"🔹 {lock_errors}x Erros de 'Cadeado Trancado' (Lock File):")
             print("   Causa: Uma sincronização anterior foi interrompida à força e o cadeado ficou preso no sistema.")
-            print("   💊 SOLUÇÃO: O Motor Sync-Engine (v5.0) remove essas travas automaticamente. Se persistir, apague o .lck manualmente.\n")
+            print("   💊 SOLUÇÃO: O Motor Sync-Engine remove essas travas automaticamente. Se persistir, apague o .lck manualmente.\n")
 
         if lstat_errors > 0:
             print(f"🔹 {lstat_errors}x Erros de 'Arquivo não encontrado' (lstat):")
@@ -986,11 +990,13 @@ def init_db(db_path):
 def scan_local(conn, local_dir, ignore_patterns):
     records = []
     def matches_pattern(name, rel_path):
+        rel_path_unix = rel_path.replace("\\", "/")
         for p in ignore_patterns:
-            if p.startswith('/'):
-                if fnmatch.fnmatch(rel_path, p[1:]): return True
+            p_unix = p.replace("\\", "/")
+            if p_unix.startswith('/'):
+                if fnmatch.fnmatch(rel_path_unix, p_unix[1:]): return True
             else:
-                if fnmatch.fnmatch(name, p): return True
+                if fnmatch.fnmatch(name, p_unix): return True
         return False
         
     def fast_scan(current_path, parent_rel=""):
@@ -1000,10 +1006,11 @@ def scan_local(conn, local_dir, ignore_patterns):
                 has_nosync = any(e.name == '.nosync' for e in entries)
                 
                 for entry in entries:
-                    rel_path = os.path.join(parent_rel, entry.name) if parent_rel else entry.name
+                    # Força as barras para padrão Unix, não importando o Sistema
+                    rel_path = (os.path.join(parent_rel, entry.name) if parent_rel else entry.name).replace("\\", "/")
                     
                     if entry.name == '.nosync':
-                        records.append(('local', rel_path, parent_rel, False, 0, '', True))
+                        records.append(('local', rel_path, parent_rel.replace("\\", "/"), False, 0, '', True))
                         continue 
                         
                     if has_nosync:
@@ -1014,11 +1021,11 @@ def scan_local(conn, local_dir, ignore_patterns):
                         
                     try:
                         if entry.is_dir(follow_symlinks=False):
-                            records.append(('local', rel_path, parent_rel, True, 0, '', False))
+                            records.append(('local', rel_path, parent_rel.replace("\\", "/"), True, 0, '', False))
                             fast_scan(entry.path, rel_path)
                         else:
                             stat = entry.stat(follow_symlinks=False)
-                            records.append(('local', rel_path, parent_rel, False, stat.st_size, str(stat.st_mtime), False))
+                            records.append(('local', rel_path, parent_rel.replace("\\", "/"), False, stat.st_size, str(stat.st_mtime), False))
                     except OSError:
                         pass
         except OSError: 
@@ -1033,7 +1040,8 @@ def scan_remote(conn, remote_name, ignore_patterns):
     cmd = ["rclone", "lsjson", f"{remote_name}:", "--fast-list", "--recursive"]
     
     for p in ignore_patterns:
-        cmd.extend(["--exclude", f"{p}/**", "--exclude", f"{p}/", "--exclude", p])
+        p_unix = p.replace("\\", "/")
+        cmd.extend(["--exclude", f"{p_unix}/**", "--exclude", f"{p_unix}/", "--exclude", p_unix])
         
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -1057,12 +1065,13 @@ def generate_filters(conn, filter_file, ignore_patterns):
     filters = []
     
     for p in ignore_patterns:
-        filters.append(f"- {p}")
-        filters.append(f"- {p}/**")
-        filters.append(f"- {p}/")
+        p_clean = p.replace("\\", "/")
+        filters.append(f"- {p_clean}")
+        filters.append(f"- {p_clean}/**")
+        filters.append(f"- {p_clean}/")
         
     for (folder,) in cursor.fetchall():
-        clean_folder = folder.strip("/")
+        clean_folder = folder.replace("\\", "/").strip("/")
         if clean_folder: 
             filters.append(f"- /{clean_folder}/")
             filters.append(f"- /{clean_folder}/**")
