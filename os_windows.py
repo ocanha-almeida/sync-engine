@@ -18,7 +18,6 @@ def manage_service(action, log_file):
             print(f"\n📊 Status da Tarefa Agendada ({TASK_NAME}):\n")
             subprocess.run(["schtasks", "/Query", "/TN", TASK_NAME, "/FO", "LIST"])
             print(f"\n📝 Últimos registros de Log ({log_file}):")
-            # Equivalente ao "tail -n 10" usando powershell
             subprocess.run(["powershell", "-NoProfile", "-Command", f"Get-Content '{log_file}' -Tail 10"])
         elif action == "reload":
             print("🔄 Reiniciando serviço (Task Scheduler)...")
@@ -30,14 +29,9 @@ def manage_service(action, log_file):
 
 def send_notification(title, message, urgency="normal"):
     try:
-        # Limpa aspas que poderiam quebrar o comando do powershell
         safe_title = title.replace("'", "").replace('"', '')
         safe_msg = message.replace("'", "").replace('"', '')
-        
-        # Chama as bibliotecas de interface do Windows (Balão de Notificação nativo)
         ps_cmd = f"Add-Type -AssemblyName System.Windows.Forms; $notify = New-Object System.Windows.Forms.NotifyIcon; $notify.Icon = [System.Drawing.SystemIcons]::Information; $notify.Visible = $true; $notify.ShowBalloonTip(5000, '{safe_title}', '{safe_msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -Seconds 5; $notify.Dispose()"
-        
-        # Executa sem abrir janelas pretas piscando na tela do usuário
         subprocess.Popen(["powershell", "-WindowStyle", "Hidden", "-Command", ps_cmd], creationflags=subprocess.CREATE_NO_WINDOW)
     except Exception: 
         pass
@@ -48,10 +42,9 @@ def run_update_installer(extract_dir):
         print("\n🛑 Parando o motor atual antes de atualizar...")
         manage_service("stop", "")
         
-        print("\n🚀 Iniciando instalador (O Windows pedirá permissão de Administrador na tela):")
-        # Invoca o script .ps1 pedindo elevação (UAC) com "RunAs"
-        ps_cmd = f'Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File \\"{install_script}\\"" -Verb RunAs -Wait'
-        subprocess.run(["powershell", "-Command", ps_cmd])
+        print("\n🚀 Iniciando instalador...")
+        # Chamada direta e limpa, imune a erros de contra-barras em strings
+        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", install_script], cwd=extract_dir)
         
         print("\n✅ Atualização concluída com sucesso!")
         print("⚠️  Aviso: Não se esqueça de rodar 'sync-engine start' para religar o motor.")

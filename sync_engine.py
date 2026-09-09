@@ -38,7 +38,7 @@ else:
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "5.3"
+VERSION = "5.4"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
