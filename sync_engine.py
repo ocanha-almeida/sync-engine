@@ -13,7 +13,15 @@ import tempfile
 import zipfile
 import re
 import platform
+import ssl
 from logging.handlers import RotatingFileHandler
+
+# ==========================================
+# ÂNCORA DE DIRETÓRIO (ESSENCIAL PARA WINDOWS TASK SCHEDULER)
+# ==========================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.append(BASE_DIR)
 
 # ==========================================
 # IMPORTAÇÃO DINÂMICA DO SISTEMA OPERACIONAL
@@ -30,7 +38,7 @@ else:
 # ==========================================
 # VARIÁVEIS DE VERSÃO E AUTO-UPDATE
 # ==========================================
-VERSION = "5.1"
+VERSION = "5.3"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -165,10 +173,14 @@ def run_update():
     print(f"Versão local:  {VERSION}")
     print("Buscando versão mais recente no GitHub...\n")
     
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
     remote_version = None
     try:
         req = urllib.request.Request(UPDATE_URL_RAW, headers={'Cache-Control': 'no-cache'})
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
             content = response.read().decode('utf-8')
             match = re.search(r'^VERSION\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
             if match:
@@ -201,7 +213,7 @@ def run_update():
         zip_path = os.path.join(tmp_dir, "update.zip")
         
         req = urllib.request.Request(UPDATE_URL_ZIP, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+        with urllib.request.urlopen(req, context=ctx) as response, open(zip_path, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
             
         print("📦 Extraindo arquivos...")
@@ -271,7 +283,6 @@ def run_filename_cleaner():
         rel_root = os.path.relpath(root, alvo_expandido)
         if rel_root == '.': rel_root = ""
         
-        # Garante barras em formato Unix para regras
         rel_root_unix = rel_root.replace("\\", "/")
 
         if '.nosync' in files:
@@ -642,7 +653,7 @@ def run_dry_run():
             if max_size != "0": cmd.append(f"--max-size={max_size}")
             
             tee("\nLogs do Rclone:\n")
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
             
             if result.stderr: tee(clean_log_text(result.stderr.strip()))
             if result.stdout: tee(clean_log_text(result.stdout.strip()))
@@ -709,7 +720,7 @@ def run_size_report():
 
             tee("  💻 No Computador Local:")
             cmd_local = ["rclone", "ls", local_dir, f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
-            res_local = subprocess.run(cmd_local, capture_output=True, text=True)
+            res_local = subprocess.run(cmd_local, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if res_local.stdout.strip():
                 for line in res_local.stdout.strip().split('\n'):
                     tee(f"     - {format_size_line(line)}")
@@ -718,7 +729,7 @@ def run_size_report():
 
             tee("\n  ☁️  Na Nuvem:")
             cmd_remote = ["rclone", "ls", f"{remote_name}:", f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
-            res_remote = subprocess.run(cmd_remote, capture_output=True, text=True)
+            res_remote = subprocess.run(cmd_remote, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if res_remote.stdout.strip():
                 for line in res_remote.stdout.strip().split('\n'):
                     tee(f"     - {format_size_line(line)}")
@@ -773,7 +784,7 @@ def run_config_wizard():
             while True:
                 clear_screen()
                 print(f"--- Vinculando Nuvem ao Perfil '{profile}' ---")
-                rclone_out = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True)
+                rclone_out = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 remotes = [r.strip(':') for r in rclone_out.stdout.strip().split('\n') if r.strip()]
 
                 print("\nConexões Rclone disponíveis:")
@@ -1006,7 +1017,6 @@ def scan_local(conn, local_dir, ignore_patterns):
                 has_nosync = any(e.name == '.nosync' for e in entries)
                 
                 for entry in entries:
-                    # Força as barras para padrão Unix, não importando o Sistema
                     rel_path = (os.path.join(parent_rel, entry.name) if parent_rel else entry.name).replace("\\", "/")
                     
                     if entry.name == '.nosync':
@@ -1044,13 +1054,15 @@ def scan_remote(conn, remote_name, ignore_patterns):
         cmd.extend(["--exclude", f"{p_unix}/**", "--exclude", f"{p_unix}/", "--exclude", p_unix])
         
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # A flag encoding="utf-8" salva o script no Windows de dar crash com acentos ("Acadêmicos")
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if result.stdout.strip():
             for item in json.loads(result.stdout):
                 path = item.get("Path", "")
-                parent_dir = os.path.dirname(path)
                 
-                is_nosync = (os.path.basename(path) == '.nosync')
+                parts = path.split("/")
+                parent_dir = "/".join(parts[:-1]) if len(parts) > 1 else ""
+                is_nosync = (parts[-1] == '.nosync')
                 
                 records.append(('remote', path, parent_dir, item.get("IsDir", False), item.get("Size", 0), item.get("ModTime", ""), is_nosync))
                 
@@ -1106,7 +1118,6 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir
     with open(log_file, "r", encoding="utf-8") as f:
         log_text = f.read()
     
-    # --- AUTO-UNLOCKER ---
     if result.returncode != 0 and "prior lock file found" in log_text.lower():
         lock_match = re.search(r'prior lock file found:\s*([^\r\n]+)', log_text, re.IGNORECASE)
         if lock_match:
@@ -1120,9 +1131,7 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir
             result = subprocess.run(cmd)
             with open(log_file, "r", encoding="utf-8") as f:
                 log_text = f.read()
-    # ---------------------
 
-    # --- ANÁLISE BLINDADA ANTES DA LIMPEZA ---
     has_transfers, err_msg = analyze_sync_logic(log_text)
     
     if result.returncode == 0:
@@ -1177,6 +1186,7 @@ Gerenciamento do Motor de Fundo:
   start          LIGA o serviço em segundo plano (inicia com o sistema).
   stop           DESLIGA e remove o serviço em segundo plano.
   status         Exibe o status e o histórico de logs do motor.
+  reload         Reinicia o serviço atual.
 
 Utilitários:
   version, -v    Exibe a versão atual do script.
@@ -1202,17 +1212,26 @@ if __name__ == "__main__":
         elif comando == "start": sys_tools.manage_service("start", LOG_FILE)
         elif comando == "stop": sys_tools.manage_service("stop", LOG_FILE)
         elif comando == "status": sys_tools.manage_service("status", LOG_FILE)
+        elif comando == "reload": sys_tools.manage_service("reload", LOG_FILE)
         else:
             clear_screen()
             print(f"❌ Erro: Comando desconhecido '{sys.argv[1]}'\n")
             print_help()
         sys.exit(0)
     else:
-        if sys.stdout.isatty():
+        is_terminal = False
+        try:
+            if sys.stdout is not None and sys.stdout.isatty():
+                is_terminal = True
+        except Exception:
+            pass
+            
+        if is_terminal:
             clear_screen()
             print("❌ Erro: Nenhum comando informado.\n")
             print_help()
             sys.exit(1)
+        # Se is_terminal for False (está rodando invisível no pythonw do Windows), ele desce e entra no loop principal!
         
     try:
         logger.info("Motor Sync Engine Iniciado em Background.")
