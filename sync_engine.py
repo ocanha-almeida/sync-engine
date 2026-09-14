@@ -32,23 +32,16 @@ if SISTEMA == "Linux":
 elif SISTEMA == "Windows":
     import os_windows as sys_tools
 else:
-    print(f"❌ Erro crítico: O sistema operacional '{SISTEMA}' não é suportado pelo Sync Engine.")
+    print(f"❌ Erro crítico: O sistema '{SISTEMA}' não é suportado.")
     sys.exit(1)
 
-# ==========================================
-# VARIÁVEIS DE VERSÃO E AUTO-UPDATE
-# ==========================================
-VERSION = "5.4"
+VERSION = "5.5"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
-# ==========================================
-# DIRETÓRIOS E LOGS XDG
-# ==========================================
 CONFIG_DIR = os.path.expanduser("~/.config/sync_engine")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 LOG_FILE = os.path.join(CONFIG_DIR, "sync.log")
-
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
 logger = logging.getLogger("SyncEngine")
@@ -76,7 +69,6 @@ def load_config():
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except json.JSONDecodeError:
-        print("Erro: config.json corrompido. Usando padrões de fábrica.")
         return DEFAULT_CONFIG
 
 def save_config(config_data):
@@ -94,9 +86,6 @@ def get_report_dir(config):
             return CONFIG_DIR
     return CONFIG_DIR
 
-# ==========================================
-# UTILITÁRIOS DE TELA E DIAGNÓSTICO
-# ==========================================
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -108,60 +97,42 @@ def clean_log_text(text):
     skip = False
     for line in text.split('\n'):
         if "Bisyncing with Comparison Settings" in line or "Lockfile info" in line:
-            skip = True
-            continue
+            skip = True; continue
         if skip and line.strip() == "}":
-            skip = False
-            continue
-        if skip:
-            continue
-        if "Setting --ignore-listing-checksum" in line:
-            continue
-        if "Valid lock file found" in line:
-            continue
+            skip = False; continue
+        if skip: continue
+        if "Setting --ignore-listing-checksum" in line: continue
+        if "Valid lock file found" in line: continue
         cleaned.append(line)
     return "\n".join(cleaned)
 
 def clean_log_file(file_path):
     try:
         if not os.path.exists(file_path): return
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-        
+        with open(file_path, "r", encoding="utf-8") as f: text = f.read()
         text = re.sub(r'Bisyncing with Comparison Settings:\s*\{.*?\}', '', text, flags=re.DOTALL)
         text = re.sub(r'Lockfile info:\s*\{.*?\}', '', text, flags=re.DOTALL)
-        
         cleaned = []
         for line in text.split('\n'):
             if "Setting --ignore-listing-checksum" in line: continue
             if "Valid lock file found" in line: continue
             if line.strip() == "" and not cleaned: continue
             cleaned.append(line)
-            
-        final_text = "\n".join(cleaned)
-        final_text = re.sub(r'\n{3,}', '\n\n', final_text)
-        
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(final_text)
-    except Exception:
-        pass
+        final_text = re.sub(r'\n{3,}', '\n\n', "\n".join(cleaned))
+        with open(file_path, "w", encoding="utf-8") as f: f.write(final_text)
+    except Exception: pass
 
 def run_doctor():
     clear_screen()
     print("=== 🩺 Médico do Sistema (Doctor) ===")
     print("Verificando a saúde do ambiente para o Sync Engine...\n")
-
     if shutil.which("rclone"): print("🟢 Rclone: Instalado e pronto.")
     else: print("🔴 Rclone: NÃO ENCONTRADO! Instale antes de continuar.")
-
     try:
         sqlite3.connect(":memory:").close()
         print("🟢 SQLite3: Motor de banco de dados nativo funcionando.")
-    except Exception:
-        print("🔴 SQLite3: Falha no módulo interno do Python!")
-
+    except Exception: print("🔴 SQLite3: Falha no módulo interno do Python!")
     sys_tools.run_doctor_os(CONFIG_DIR)
-
     print("\n✅ Diagnóstico concluído.")
     pause()
 
@@ -171,809 +142,393 @@ def run_update():
     print("🔄 VERIFICADOR DE ATUALIZAÇÕES")
     print("="*45)
     print(f"Versão local:  {VERSION}")
-    print("Buscando versão mais recente no GitHub...\n")
-    
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    
-    remote_version = None
     try:
         req = urllib.request.Request(UPDATE_URL_RAW, headers={'Cache-Control': 'no-cache'})
         with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
             content = response.read().decode('utf-8')
             match = re.search(r'^VERSION\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
-            if match:
-                remote_version = match.group(1)
+            remote_version = match.group(1) if match else None
     except Exception as e:
-        print(f"❌ Erro de rede ao buscar atualização: {e}")
-        pause()
-        return
+        print(f"❌ Erro de rede: {e}"); pause(); return
 
     if not remote_version:
-        print("❌ Não foi possível identificar a versão no servidor.")
-        pause()
-        return
+        print("❌ Não foi possível identificar a versão no servidor."); pause(); return
 
     print(f"Versão remota: {remote_version}\n")
-    
     if remote_version == VERSION:
-        print("✅ Você já está utilizando a versão mais recente!")
-        pause()
-        return
+        print("✅ Você já está utilizando a versão mais recente!"); pause(); return
         
     print("🎉 Uma nova versão está disponível!")
-    resp = input("Deseja baixar e instalar a atualização agora? (S/N): ").strip().lower()
-    if resp != 's':
-        return
+    resp = input("Deseja baixar e instalar a atualização agora? (S/N) [N]: ").strip().lower()
+    if resp != 's': return
         
     print("\n📥 Baixando pacote de atualização...")
     try:
         tmp_dir = tempfile.mkdtemp()
         zip_path = os.path.join(tmp_dir, "update.zip")
-        
         req = urllib.request.Request(UPDATE_URL_ZIP, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, context=ctx) as response, open(zip_path, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
-            
         print("📦 Extraindo arquivos...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(tmp_dir)
-            
-        extract_dir = os.path.join(tmp_dir, "sync-engine-main")
-        sys_tools.run_update_installer(extract_dir)
-            
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref: zip_ref.extractall(tmp_dir)
+        sys_tools.run_update_installer(os.path.join(tmp_dir, "sync-engine-main"))
         shutil.rmtree(tmp_dir)
         pause()
-        
     except Exception as e:
-        print(f"\n❌ Erro durante o processo de atualização: {e}")
-        pause()
+        print(f"\n❌ Erro durante o processo de atualização: {e}"); pause()
 
-# ==========================================
-# ROTINAS DE HIGIENIZAÇÃO E ANÁLISE (NOVAS)
-# ==========================================
 def run_filename_cleaner():
     clear_screen()
     print("="*45)
-    print("🧹 HIGIENIZADOR DE NOMES DE ARQUIVOS (PRÉ-VISUALIZAÇÃO)")
+    print("🧹 HIGIENIZADOR E RADAR DE COLISÃO")
     print("="*45)
-    print("Remove/substitui caracteres especiais que causam erros 'lstat' no Rclone.")
-    print("Alvos: ‛ ＂ ｜ ⧸ ： ？ ＊ ★ ✬ ☆\n")
-
     config = load_config()
     ACCOUNTS = config.get("ACCOUNTS", [])
 
-    print("Escolha o diretório alvo para a limpeza:")
+    print("Escolha o diretório alvo para a análise:")
     print("[0] Digitar um caminho manual personalizado")
-    for i, acc in enumerate(ACCOUNTS):
-        print(f"[{i+1}] Pasta da conta '{acc['PROFILE_NAME']}' ({acc['LOCAL_DIR']})")
-    print("[C] Cancelar")
-
-    op = input("\nOpção: ").strip().lower()
-    if op == 'c': return
-
-    alvo = ""
-    ignore_patterns = []
+    for i, acc in enumerate(ACCOUNTS): print(f"[{i+1}] Conta '{acc['PROFILE_NAME']}' ({acc['LOCAL_DIR']})")
     
-    if op == '0':
-        alvo = input("\nDigite o caminho completo da pasta (ex: ~/Músicas): ").strip()
+    op = input("\nOpção (Enter para cancelar): ").strip().lower()
+    if op == '' or op == 'c': return
+
+    ignore_patterns = []
+    if op == '0': alvo = input("\nDigite o caminho da pasta: ").strip()
     elif op.isdigit() and 1 <= int(op) <= len(ACCOUNTS):
         conta = ACCOUNTS[int(op)-1]
-        alvo = conta["LOCAL_DIR"]
-        ignore_patterns = conta.get("IGNORE_PATTERNS", [])
-    else:
-        print("❌ Opção inválida."); time.sleep(1.5); return
+        alvo, ignore_patterns = conta["LOCAL_DIR"], conta.get("IGNORE_PATTERNS", [])
+    else: return
 
+    if not alvo: return
     alvo_expandido = os.path.expanduser(alvo)
     if not os.path.isdir(alvo_expandido):
-        print(f"\n❌ Erro: O diretório '{alvo_expandido}' não existe.")
-        pause()
-        return
+        print(f"\n❌ Erro: O diretório '{alvo_expandido}' não existe."); pause(); return
 
-    print("\n🔍 Analisando diretório e aplicando filtros de exclusão... Aguarde.\n")
-    substituicoes = {
-        "‛‛": "", "‛": "'", "＂": "", "｜": "-", "⧸": "-",
-        "：": "-", "？": "", "＊": "", "★": "", "✬": "", "☆": ""
-    }
-
+    print("\n🔍 Analisando diretório... Aguarde.\n")
+    substituicoes = {"‛‛": "", "‛": "'", "＂": "", "｜": "-", "⧸": "-", "：": "-", "？": "", "＊": "", "★": "", "✬": "", "☆": ""}
     arquivos_para_renomear = []
+    colisoes_case = []
     
     for root, dirs, files in os.walk(alvo_expandido):
         rel_root = os.path.relpath(root, alvo_expandido)
         if rel_root == '.': rel_root = ""
-        
         rel_root_unix = rel_root.replace("\\", "/")
 
-        if '.nosync' in files:
-            dirs.clear() 
-            continue
+        if '.nosync' in files: dirs.clear(); continue
 
         dirs_to_keep = []
         for d in dirs:
-            rel_path = os.path.join(rel_root_unix, d) if rel_root_unix else d
-            rel_path = rel_path.replace("\\", "/")
             ignored = False
+            rel_path = os.path.join(rel_root_unix, d).replace("\\", "/") if rel_root_unix else d.replace("\\", "/")
             for p in ignore_patterns:
                 p_unix = p.replace("\\", "/")
-                if p_unix.startswith('/'):
-                    if fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
-                else:
-                    if fnmatch.fnmatch(d, p_unix): ignored = True; break
-            if not ignored:
-                dirs_to_keep.append(d)
+                if p_unix.startswith('/') and fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
+                elif fnmatch.fnmatch(d, p_unix): ignored = True; break
+            if not ignored: dirs_to_keep.append(d)
         dirs[:] = dirs_to_keep
 
+        vistos_nesta_pasta = {}
         for nome in files:
-            rel_path = os.path.join(rel_root_unix, nome) if rel_root_unix else nome
-            rel_path = rel_path.replace("\\", "/")
+            rel_path = os.path.join(rel_root_unix, nome).replace("\\", "/") if rel_root_unix else nome.replace("\\", "/")
             ignored = False
             for p in ignore_patterns:
                 p_unix = p.replace("\\", "/")
-                if p_unix.startswith('/'):
-                    if fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
-                else:
-                    if fnmatch.fnmatch(nome, p_unix): ignored = True; break
-            if ignored:
-                continue
+                if p_unix.startswith('/') and fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
+                elif fnmatch.fnmatch(nome, p_unix): ignored = True; break
+            if ignored: continue
+
+            # Radar de Colisão Case-Sensitive (Linux vs Windows)
+            nome_lower = nome.lower()
+            if nome_lower in vistos_nesta_pasta:
+                colisoes_case.append((root, vistos_nesta_pasta[nome_lower], nome))
+            else:
+                vistos_nesta_pasta[nome_lower] = nome
 
             novo_nome = nome
-            for ruim, bom in substituicoes.items():
-                novo_nome = novo_nome.replace(ruim, bom)
-
-            while "  " in novo_nome:
-                novo_nome = novo_nome.replace("  ", " ")
+            for ruim, bom in substituicoes.items(): novo_nome = novo_nome.replace(ruim, bom)
+            while "  " in novo_nome: novo_nome = novo_nome.replace("  ", " ")
             novo_nome = novo_nome.replace(" .", ".")
 
             if novo_nome != nome:
-                caminho_antigo = os.path.join(root, nome)
-                caminho_novo = os.path.join(root, novo_nome)
-                arquivos_para_renomear.append((caminho_antigo, caminho_novo, nome, novo_nome))
+                arquivos_para_renomear.append((os.path.join(root, nome), os.path.join(root, novo_nome), nome, novo_nome))
+
+    if colisoes_case:
+        print("🚨 ALERTA CRÍTICO: COLISÃO DE NOMES DETECTADA! 🚨")
+        print("Sistemas Windows e Nuvens podem corromper estes arquivos devido a nomes idênticos diferindo apenas por letras maiúsculas/minúsculas:\n")
+        for pasta, arq1, arq2 in colisoes_case:
+            print(f" 📁 Pasta: {pasta}\n    ❌ {arq1}\n    ❌ {arq2}\n")
+        print("⚠️  AÇÃO RECOMENDADA: Renomeie um destes arquivos manualmente antes de sincronizar.\n")
 
     if not arquivos_para_renomear:
-        print("✨ Tudo limpo! Nenhum arquivo precisa ser renomeado.")
-        pause()
-        return
+        print("✨ Nomes de arquivos limpos! Nenhum caractere inválido encontrado.")
+        pause(); return
 
     print(f"⚠️ Encontrados {len(arquivos_para_renomear)} arquivos com caracteres inválidos.\n")
-    print("--- PRÉ-VISUALIZAÇÃO (Exibindo até 10 exemplos) ---")
+    print("--- PRÉ-VISUALIZAÇÃO ---")
     for caminho_antigo, _, nome, novo_nome in arquivos_para_renomear[:10]:
-        print(f" 📁 Em:   {os.path.dirname(caminho_antigo)}")
-        print(f"    De:   {nome}")
-        print(f"    Para: {novo_nome}\n")
+        print(f" 📁 Em:   {os.path.dirname(caminho_antigo)}\n    De:   {nome}\n    Para: {novo_nome}\n")
     
-    if len(arquivos_para_renomear) > 10:
-        print(f"... e mais {len(arquivos_para_renomear) - 10} arquivos ocultados na prévia.\n")
+    confirma = input(f"Confirma a alteração destes {len(arquivos_para_renomear)} arquivos? (S/N) [N]: ").strip().lower()
+    if confirma != 's': print("\nOperação cancelada."); pause(); return
 
-    confirma = input(f"Confirma a alteração destes {len(arquivos_para_renomear)} arquivos? (S/N): ").strip().lower()
-    if confirma != 's':
-        print("\nOperação cancelada pelo usuário.")
-        pause()
-        return
-
-    print("\nIniciando renomeação e gerando relatório detalhado...")
-    report_dir = get_report_dir(config)
-    report_path = os.path.join(report_dir, "ultimo_relatorio_higienizacao.txt")
     renomeados = 0
-
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write("="*45 + "\n")
-        f.write("🧹 RELATÓRIO DE HIGIENIZAÇÃO DE NOMES\n")
-        f.write(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
-        f.write("="*45 + "\n\n")
-
-        for caminho_antigo, caminho_novo, nome, novo_nome in arquivos_para_renomear:
-            pasta = os.path.dirname(caminho_antigo)
-            try:
-                os.rename(caminho_antigo, caminho_novo)
-                f.write(f"📁 Pasta: {pasta}\n")
-                f.write(f"   ✅ [SUCESSO] De: '{nome}' -> Para: '{novo_nome}'\n\n")
-                renomeados += 1
-            except Exception as e:
-                f.write(f"📁 Pasta: {pasta}\n")
-                f.write(f"   ❌ [ERRO] Falha em '{nome}': {e}\n\n")
-
-    print(f"\n🎉 Concluído! {renomeados} arquivos foram higienizados.")
-    print(f"📂 Relatório completo salvo em: {report_path}")
-    pause()
+    for caminho_antigo, caminho_novo, nome, novo_nome in arquivos_para_renomear:
+        try:
+            os.rename(caminho_antigo, caminho_novo)
+            renomeados += 1
+        except Exception: pass
+    print(f"\n🎉 Concluído! {renomeados} arquivos foram higienizados."); pause()
 
 def run_analyze_errors():
     clear_screen()
-    print("="*45)
-    print("🔎 ANALISADOR DE ERROS DE SINCRONIZAÇÃO")
-    print("="*45)
-
+    print("="*45 + "\n🔎 ANALISADOR DE ERROS DE SINCRONIZAÇÃO\n" + "="*45)
     config = load_config()
     report_dir = get_report_dir(config)
-    
     logs_disponiveis = []
-    
     manual_log = os.path.join(report_dir, "ultima_sincronizacao_manual.txt")
-    if os.path.exists(manual_log):
-        logs_disponiveis.append(("Sincronização Manual (Opção 6)", manual_log))
+    if os.path.exists(manual_log): logs_disponiveis.append(("Sincronização Manual", manual_log))
         
-    ACCOUNTS = config.get("ACCOUNTS", [])
-    for acc in ACCOUNTS:
+    for acc in config.get("ACCOUNTS", []):
         safe_name = "".join([c for c in acc['PROFILE_NAME'].lower().replace(" ", "_") if c.isalnum() or c=='_'])
         auto_log = os.path.join(report_dir, f"ultimo_ciclo_auto_{safe_name}.txt")
-        if os.path.exists(auto_log):
-            logs_disponiveis.append((f"Ciclo Automático Recente: {acc['PROFILE_NAME']}", auto_log))
+        if os.path.exists(auto_log): logs_disponiveis.append((f"Ciclo Automático: {acc['PROFILE_NAME']}", auto_log))
             
-        alteracoes_log = os.path.join(report_dir, f"ultimo_ciclo_COM_ALTERACOES_{safe_name}.txt")
-        if os.path.exists(alteracoes_log):
-            logs_disponiveis.append((f"Últimas Alterações (Fundo): {acc['PROFILE_NAME']}", alteracoes_log))
+    if not logs_disponiveis: print("\n❌ Nenhum relatório encontrado."); pause(); return
 
-    if not logs_disponiveis:
-        print("\n❌ Nenhum relatório de sincronização encontrado.")
-        pause()
-        return
-
-    print("\nEscolha qual relatório deseja analisar:\n")
-    for i, (nome, caminho) in enumerate(logs_disponiveis):
-        print(f"  [{i+1}] {nome}")
-    print("  [C] Cancelar")
-
-    op = input("\nOpção: ").strip().lower()
-    if op == 'c': return
+    print("\nEscolha qual relatório analisar:\n")
+    for i, (nome, _) in enumerate(logs_disponiveis): print(f"  [{i+1}] {nome}")
     
-    if not (op.isdigit() and 1 <= int(op) <= len(logs_disponiveis)):
-        print("❌ Opção inválida."); time.sleep(1.5); return
+    op = input("\nOpção (Enter para cancelar): ").strip().lower()
+    if op == '' or op == 'c': return
+    if not (op.isdigit() and 1 <= int(op) <= len(logs_disponiveis)): return
         
     sync_report = logs_disponiveis[int(op)-1][1]
-    print(f"\nLendo log selecionado...\n")
     
-    lstat_errors = 0
-    etag_errors = 0
-    resync_requests = 0
-    lock_errors = 0
-    other_errors = 0
-    total_errors = 0
-    lock_file_path = ""
+    total_errors, lstat_errors, etag_errors, resync_requests, lock_errors, other_errors = 0, 0, 0, 0, 0, 0
 
     with open(sync_report, "r", encoding="utf-8") as f:
         for line in f:
             line_lower = line.lower()
-            
             if "error :" in line_lower or "failed to" in line_lower or "critical error" in line_lower or "prior lock file found" in line_lower:
-                if "lstat" in line_lower and "no such file or directory" in line_lower:
-                    lstat_errors += 1
-                    total_errors += 1
-                elif "409 conflict" in line_lower or "etag mismatch" in line_lower:
-                    etag_errors += 1
-                    total_errors += 1
-                elif "cannot find prior path1 or path2 listings" in line_lower:
-                    resync_requests += 1
-                    total_errors += 1
-                elif "prior lock file found" in line_lower:
-                    lock_errors += 1
-                    total_errors += 1
-                    if ".lck" in line:
-                        try:
-                            lock_file_path = line.split("prior lock file found:")[1].strip()
-                        except IndexError:
-                            pass
-                else:
-                    other_errors += 1
-                    total_errors += 1
+                total_errors += 1
+                if "lstat" in line_lower and "no such file or directory" in line_lower: lstat_errors += 1
+                elif "409 conflict" in line_lower or "etag mismatch" in line_lower: etag_errors += 1
+                elif "cannot find prior path1 or path2 listings" in line_lower: resync_requests += 1
+                elif "prior lock file found" in line_lower: lock_errors += 1
+                else: other_errors += 1
 
-    if total_errors == 0:
-        print("✨ Excelente! Não encontramos nenhum erro no relatório analisado.")
-        print("Seu ecossistema está perfeitamente sincronizado e saudável.")
+    if total_errors == 0: print("\n✨ Excelente! Seu ecossistema está saudável.")
     else:
-        print(f"⚠️  O motor encontrou {total_errors} indícios de problemas no último relatório.\n")
-        
-        if lock_errors > 0:
-            print(f"🔹 {lock_errors}x Erros de 'Cadeado Trancado' (Lock File):")
-            print("   Causa: Uma sincronização anterior foi interrompida à força e o cadeado ficou preso no sistema.")
-            print("   💊 SOLUÇÃO: O Motor Sync-Engine remove essas travas automaticamente. Se persistir, apague o .lck manualmente.\n")
-
-        if lstat_errors > 0:
-            print(f"🔹 {lstat_errors}x Erros de 'Arquivo não encontrado' (lstat):")
-            print("   Causa: O Rclone viu o arquivo, mas não conseguiu acessá-lo na hora do upload.")
-            print("   Motivo: Uso de caracteres proibidos em nuvens ou atalhos quebrados.")
-            print("   💊 SOLUÇÃO: Use a Opção 9 (Higienizar Nomes) para limpar a pasta afetada.\n")
-
-        if etag_errors > 0:
-            print(f"🔹 {etag_errors}x Erros de 'Conflito de eTag' (409 Conflict):")
-            print("   Causa: A nuvem modificou o arquivo gerando miniaturas assim que ele chegou.")
-            print("   Motivo: É um erro de ansiedade da nuvem. O arquivo está a salvo.")
-            print("   💊 SOLUÇÃO: Apenas rode a sincronização novamente para atualizar a validação.\n")
-
-        if resync_requests > 0:
-            print(f"🔹 {resync_requests}x Pedidos de 'Varredura de Cura' (Resync):")
-            print("   Causa: O histórico de sincronização foi perdido ou desconfigurado.")
-            print("   💊 SOLUÇÃO: O próprio Sync Engine já deve ter corrigido isso automaticamente.\n")
-            
-        if other_errors > 0:
-            print(f"🔹 Outros {other_errors}x Erros variados:")
-            print(f"   Consulte o arquivo gerado para investigar mais a fundo.\n")
-
-    print("-" * 45)
+        print(f"\n⚠️ Encontrados {total_errors} indícios de problemas:\n")
+        if lock_errors > 0: print(f"🔹 {lock_errors}x 'Cadeado Trancado' (Lock File): O motor já deve ter quebrado o cadeado automaticamente.")
+        if lstat_errors > 0: print(f"🔹 {lstat_errors}x 'Arquivo não encontrado' (lstat): Use a Opção 9 para higienizar nomes de arquivos.")
+        if etag_errors > 0: print(f"🔹 {etag_errors}x 'Conflito de eTag': Erro passageiro de ansiedade da nuvem. Será curado sozinho.")
+        if resync_requests > 0: print(f"🔹 {resync_requests}x 'Varredura de Cura': O histórico quebrou, o motor já iniciou o reparo.")
     pause()
-
-# ==========================================
-# ROTINAS DE SINCRONIZAÇÃO E RELATÓRIOS
-# ==========================================
-def analyze_sync_logic(log_text):
-    mudancas = ["Copied (", "Deleted:", "Moved (", "Updated:", "Applying changes"]
-    has_changes = any(m in log_text for m in mudancas)
-    if "resync is required" in log_text.lower() or "resyncing" in log_text.lower():
-        has_changes = True
-    
-    errors = [line for line in log_text.split('\n') if "ERROR" in line]
-    err_msg = errors[0].split("ERROR :")[-1].strip() if errors else "Verifique o log detalhado."
-    return has_changes, err_msg
 
 def run_now():
     clear_screen()
-    print("="*45)
-    print("🚀 SINCRONIZAÇÃO IMEDIATA E REPARO (NOW)")
-    print("="*45)
-    
+    print("="*45 + "\n🚀 SINCRONIZAÇÃO IMEDIATA E REPARO (NOW)\n" + "="*45)
     config = load_config()
     ACCOUNTS = config.get("ACCOUNTS", [])
-    if not ACCOUNTS:
-        print("\nNenhuma conta configurada para sincronizar.")
-        return
+    if not ACCOUNTS: print("\nNenhuma conta configurada."); pause(); return
 
-    bw_limit = config.get("BW_LIMIT", "0")
-    max_size = config.get("MAX_SIZE", "0")
-    
     report_dir = get_report_dir(config)
     MANUAL_SYNC_REPORT_FILE = os.path.join(report_dir, "ultima_sincronizacao_manual.txt")
-
     with open(MANUAL_SYNC_REPORT_FILE, "w", encoding="utf-8") as f:
-        f.write("="*45 + "\n")
-        f.write("🚀 RELATÓRIO DE SINCRONIZAÇÃO MANUAL (DETALHADO)\n")
-        f.write(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
-        f.write("="*45 + "\n\n")
+        f.write("="*45 + "\n🚀 RELATÓRIO DE SINCRONIZAÇÃO MANUAL\n" + "="*45 + "\n\n")
 
     for acc in ACCOUNTS:
         print(f"\n🔄 Conta atual: {acc['PROFILE_NAME']}")
         print("  [1] Sincronização Normal (Segura)")
-        print("  [2] ⚠️  FORÇAR Sincronização (--force) -> Libera exclusão em massa (>50%)")
+        print("  [2] ⚠️  FORÇAR Sincronização (--force)")
         print("  [3] Pular esta conta")
         
-        escolha = input("\nEscolha a ação para esta conta (1-3): ").strip()
-        if escolha == '3': 
-            with open(MANUAL_SYNC_REPORT_FILE, "a", encoding="utf-8") as f:
-                f.write(f"⏭️ Conta '{acc['PROFILE_NAME']}' pulada pelo usuário.\n\n")
-            continue
-            
-        with open(MANUAL_SYNC_REPORT_FILE, "a", encoding="utf-8") as f:
-            modo = 'FORÇADA' if escolha == '2' else 'NORMAL'
-            f.write(f"🔄 Iniciando conta: {acc['PROFILE_NAME']} (Modo: {modo})\n")
+        escolha = input("\nAção (1-3) [Enter = Pular]: ").strip()
+        if escolha == '' or escolha == '3': continue
             
         local_dir = os.path.expanduser(acc["LOCAL_DIR"])
-        remote_name = acc["REMOTE_NAME"]
-        filter_file = os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
-        db_path = os.path.join(CONFIG_DIR, acc["DB_FILE"])
-        
         os.makedirs(local_dir, exist_ok=True)
+        db_path, filter_file = os.path.join(CONFIG_DIR, acc["DB_FILE"]), os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
+        
         db_connection = init_db(db_path)
         scan_local(db_connection, local_dir, acc.get("IGNORE_PATTERNS", []))
-        scan_remote(db_connection, remote_name, acc.get("IGNORE_PATTERNS", []))
+        scan_remote(db_connection, acc["REMOTE_NAME"], acc.get("IGNORE_PATTERNS", []))
         generate_filters(db_connection, filter_file, acc.get("IGNORE_PATTERNS", []))
         db_connection.close()
 
-        cmd = [
-            "rclone", "bisync", local_dir, f"{remote_name}:",
-            f"--filter-from={filter_file}", "--transfers=16", "--checkers=16",
-            "--create-empty-src-dirs", "--fix-case", "-P", "-v",
-            f"--log-file={MANUAL_SYNC_REPORT_FILE}"
-        ]
-        if bw_limit != "0": cmd.append(f"--bwlimit={bw_limit}")
-        if max_size != "0": cmd.append(f"--max-size={max_size}")
+        cmd = ["rclone", "bisync", local_dir, f"{acc['REMOTE_NAME']}:", f"--filter-from={filter_file}", "--create-empty-src-dirs", "--fix-case", "-P", "-v", f"--log-file={MANUAL_SYNC_REPORT_FILE}"]
+        if escolha == '2': cmd.append("--force")
         
-        if escolha == '2':
-            cmd.append("--force")
-            print("\n⚠️ Modo FORCE ativado. Arquivos serão deletados sem trava de segurança.")
+        subprocess.run(cmd)
         
-        result = subprocess.run(cmd)
-        
-        with open(MANUAL_SYNC_REPORT_FILE, "r", encoding="utf-8") as f_log:
-            log_text = f_log.read()
-            
-        if result.returncode != 0 and "prior lock file found" in log_text.lower():
+        with open(MANUAL_SYNC_REPORT_FILE, "r", encoding="utf-8") as f_log: log_text = f_log.read()
+        if "prior lock file found" in log_text.lower():
             lock_match = re.search(r'prior lock file found:\s*([^\r\n]+)', log_text, re.IGNORECASE)
             if lock_match:
-                lock_path = lock_match.group(1).strip()
-                print(f"\n⚠️  Trava residual (Lock) detectada. Quebrando cadeado automaticamente...")
-                with open(MANUAL_SYNC_REPORT_FILE, "a", encoding="utf-8") as f:
-                    f.write(f"⚠️  Trava residual removida automaticamente: {lock_path}\n")
-                subprocess.run(["rclone", "deletefile", lock_path])
-                print("🔄 Retomando sincronização...")
-                result = subprocess.run(cmd)
-                with open(MANUAL_SYNC_REPORT_FILE, "r", encoding="utf-8") as f_log:
-                    log_text = f_log.read()
+                print(f"\n⚠️  Quebrando cadeado automaticamente...")
+                subprocess.run(["rclone", "deletefile", lock_match.group(1).strip()])
+                subprocess.run(cmd)
+                with open(MANUAL_SYNC_REPORT_FILE, "r", encoding="utf-8") as f_log: log_text = f_log.read()
 
-        if result.returncode != 0 and ("resync" in log_text.lower() or "not found" in log_text.lower()):
-            print(f"\n⚠️ Rclone solicitou uma varredura de cura (--resync). Iniciando...")
-            with open(MANUAL_SYNC_REPORT_FILE, "a", encoding="utf-8") as f:
-                f.write("⚠️ Varredura de cura (--resync) acionada automaticamente...\n")
-            if "--resync" not in cmd: cmd.append("--resync")
-            subprocess.run(cmd)
+        if "resync" in log_text.lower() or "not found" in log_text.lower():
+            print(f"\n⚠️ Acionando varredura de cura (--resync)...")
+            cmd.append("--resync"); subprocess.run(cmd)
             
         clean_log_file(MANUAL_SYNC_REPORT_FILE)
-
         print(f"\n✅ Concluído: {acc['PROFILE_NAME']}")
-        with open(MANUAL_SYNC_REPORT_FILE, "a", encoding="utf-8") as f:
-            f.write(f"\n✅ Concluído: {acc['PROFILE_NAME']}\n")
-            f.write("-" * 45 + "\n\n")
     
-    print("\n🎉 Todas as tarefas imediatas foram concluídas!")
-    print(f"📂 Um relatório limpo e detalhado foi salvo em: {MANUAL_SYNC_REPORT_FILE}")
+    print(f"\n📂 Relatório salvo em: {MANUAL_SYNC_REPORT_FILE}"); pause()
 
 def run_dry_run():
     clear_screen()
     config = load_config()
     ACCOUNTS = config.get("ACCOUNTS", [])
+    if not ACCOUNTS: return
     
     report_dir = get_report_dir(config)
     DRY_RUN_REPORT_FILE = os.path.join(report_dir, "ultimo_dry_run.txt")
     
     with open(DRY_RUN_REPORT_FILE, "w", encoding="utf-8") as rep_file:
-        def tee(msg=""):
-            print(msg)
-            rep_file.write(msg + "\n")
-
-        tee("="*45)
-        tee("🧪 RELATÓRIO DE TEST-DRIVE (DRY-RUN)")
-        tee(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}")
-        tee("Simulando as regras. Nenhum arquivo foi alterado.")
-        tee("="*45)
-
-        if not ACCOUNTS:
-            tee("\nNenhuma conta configurada para testar.")
-            return
-
-        bw_limit = config.get("BW_LIMIT", "0")
-        max_size = config.get("MAX_SIZE", "0")
+        def tee(msg=""): print(msg); rep_file.write(msg + "\n")
+        tee("="*45 + "\n🧪 RELATÓRIO DE TEST-DRIVE (DRY-RUN)\n" + "="*45)
 
         for acc in ACCOUNTS:
             tee(f"\n🚀 Testando: {acc['PROFILE_NAME']}")
             local_dir = os.path.expanduser(acc["LOCAL_DIR"])
-            remote_name = acc["REMOTE_NAME"]
-            filter_file = os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
-            db_path = os.path.join(CONFIG_DIR, acc["DB_FILE"])
+            db_path, filter_file = os.path.join(CONFIG_DIR, acc["DB_FILE"]), os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
             
-            os.makedirs(local_dir, exist_ok=True)
             db_connection = init_db(db_path)
             scan_local(db_connection, local_dir, acc.get("IGNORE_PATTERNS", []))
-            scan_remote(db_connection, remote_name, acc.get("IGNORE_PATTERNS", []))
+            scan_remote(db_connection, acc["REMOTE_NAME"], acc.get("IGNORE_PATTERNS", []))
             generate_filters(db_connection, filter_file, acc.get("IGNORE_PATTERNS", []))
             db_connection.close()
 
-            cmd = [
-                "rclone", "bisync", local_dir, f"{remote_name}:",
-                f"--filter-from={filter_file}", "--transfers=16", "--checkers=16",
-                "--create-empty-src-dirs", "--fix-case", "-v", "--dry-run"
-            ]
-            if bw_limit != "0": cmd.append(f"--bwlimit={bw_limit}")
-            if max_size != "0": cmd.append(f"--max-size={max_size}")
+            cmd = ["rclone", "bisync", local_dir, f"{acc['REMOTE_NAME']}:", f"--filter-from={filter_file}", "--create-empty-src-dirs", "--fix-case", "-v", "--dry-run"]
             
-            tee("\nLogs do Rclone:\n")
             result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            
             if result.stderr: tee(clean_log_text(result.stderr.strip()))
             if result.stdout: tee(clean_log_text(result.stdout.strip()))
-            
-            tee(f"\n✅ Fim da simulação para {acc['PROFILE_NAME']}")
             tee("-" * 45)
-            
-    print(f"\n📂 Uma cópia deste relatório foi salva em: {DRY_RUN_REPORT_FILE}")
+    print(f"\n📂 Salvo em: {DRY_RUN_REPORT_FILE}"); pause()
 
 def run_size_report():
     clear_screen()
     config = load_config()
-    ACCOUNTS = config.get("ACCOUNTS", [])
-    
-    report_dir = get_report_dir(config)
-    SIZE_REPORT_FILE = os.path.join(report_dir, "ultimo_relatorio_tamanho.txt")
-    
+    if not config.get("ACCOUNTS", []): return
+    max_size = config.get("MAX_SIZE", "0")
+    if max_size == "0": print("Nenhum limite de tamanho configurado."); pause(); return
+
+    SIZE_REPORT_FILE = os.path.join(get_report_dir(config), "ultimo_relatorio_tamanho.txt")
     with open(SIZE_REPORT_FILE, "w", encoding="utf-8") as rep_file:
-        def tee(msg=""):
-            print(msg)
-            rep_file.write(msg + "\n")
+        def tee(msg=""): print(msg); rep_file.write(msg + "\n")
+        tee("="*45 + "\n📊 ARQUIVOS BLOQUEADOS POR TAMANHO\n" + "="*45)
 
-        tee("="*45)
-        tee("📊 RELATÓRIO DE ARQUIVOS BLOQUEADOS POR TAMANHO")
-        tee(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}")
-        tee("="*45)
-
-        if not ACCOUNTS:
-            tee("\nNenhuma conta configurada.")
-            return
-
-        max_size = config.get("MAX_SIZE", "0")
-        if max_size == "0":
-            tee("\nNenhum limite de tamanho configurado no momento (MAX_SIZE = 0).")
-            tee("Todos os arquivos estão liberados para sincronização.")
-            return
-
-        tee(f"\nAnalisando arquivos maiores que {max_size}... (Ignorando bloqueios ativos)\n")
-
-        def format_size_line(line):
-            parts = line.strip().split(maxsplit=1)
-            if len(parts) == 2 and parts[0].isdigit():
-                size = float(parts[0])
-                for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-                    if size < 1024.0:
-                        size_str = f"{size:.2f}".replace('.', ',')
-                        return f"[{size_str} {unit}] {parts[1]}"
-                    size /= 1024.0
-            return line.strip()
-
-        for acc in ACCOUNTS:
-            tee(f"🔄 Conta: {acc['PROFILE_NAME']}")
-            local_dir = os.path.expanduser(acc["LOCAL_DIR"])
-            remote_name = acc["REMOTE_NAME"]
+        for acc in config["ACCOUNTS"]:
+            tee(f"\n🔄 Conta: {acc['PROFILE_NAME']}")
             filter_file = os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
-            db_path = os.path.join(CONFIG_DIR, acc["DB_FILE"])
-
-            os.makedirs(local_dir, exist_ok=True)
-            db_connection = init_db(db_path)
-            scan_local(db_connection, local_dir, acc.get("IGNORE_PATTERNS", []))
-            scan_remote(db_connection, remote_name, acc.get("IGNORE_PATTERNS", []))
-            generate_filters(db_connection, filter_file, acc.get("IGNORE_PATTERNS", []))
-            db_connection.close()
-
-            tee("  💻 No Computador Local:")
-            cmd_local = ["rclone", "ls", local_dir, f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
-            res_local = subprocess.run(cmd_local, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            if res_local.stdout.strip():
-                for line in res_local.stdout.strip().split('\n'):
-                    tee(f"     - {format_size_line(line)}")
-            else:
-                tee("     (Nenhum arquivo local excede o limite estipulado)")
-
-            tee("\n  ☁️  Na Nuvem:")
-            cmd_remote = ["rclone", "ls", f"{remote_name}:", f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
-            res_remote = subprocess.run(cmd_remote, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            if res_remote.stdout.strip():
-                for line in res_remote.stdout.strip().split('\n'):
-                    tee(f"     - {format_size_line(line)}")
-            else:
-                tee("     (Nenhum arquivo na nuvem excede o limite estipulado)")
+            cmd_local = ["rclone", "ls", os.path.expanduser(acc["LOCAL_DIR"]), f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
+            res = subprocess.run(cmd_local, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if res.stdout.strip():
+                for line in res.stdout.strip().split('\n'): tee(f"     - {line.strip()}")
+            else: tee("     (Nenhum)")
             tee("-" * 45)
+    pause()
 
-        tee("\n✅ Relatório concluído!")
-    print(f"\n📂 Uma cópia deste relatório foi salva em: {SIZE_REPORT_FILE}")
-
-# ==========================================
-# MÓDULO WIZARD (INTERFACE INTERATIVA)
-# ==========================================
 def run_config_wizard():
-    config = load_config()
-    
     while True:
+        config = load_config()
         clear_screen()
-        print(f"=== Assistente do Sync Engine (v{VERSION}) ===")
-        print("\n" + "="*45)
-        print("--- Configuração de Contas ---")
-        print("1. Adicionar nova conta (Nuvem via Rclone)")
-        print(f"2. Listar contas atuais ({len(config.get('ACCOUNTS', []))} configurada(s))")
-        print("3. Remover uma conta")
-        print("4. Configurações Globais (Intervalo, Banda, Tamanho, Relatórios)")
-        print("5. Gerenciar Filtros Globais (Ignorar arquivos/pastas)")
+        print(f"=== Assistente Sync Engine (v{VERSION}) ===\n" + "="*45)
+        print("--- Contas ---")
+        print("1. Adicionar conta  | 2. Listar  | 3. Remover")
+        print("4. Configurações Gerais (Intervalo, Banda, Tamanho)")
+        print("5. Gerenciar Filtros Globais")
         print("\n--- Ações Extras ---")
-        print("6. 🚀 Forçar Sincronização Agora (Ao vivo / Reparo)")
-        print("7. 🧪 Test-Drive / Dry-Run (Simular Sincronização)")
-        print("8. 📊 Relatório de Arquivos Bloqueados por Tamanho")
-        print("9. 🧹 Higienizar Nomes de Arquivos (Corrigir Caracteres)")
-        print("10. 🔎 Analisar Erros de Sincronização")
-        print("11. 🩺 Médico (Diagnóstico do Sistema)")
-        print("\n--- Controle do Motor e Sistema ---")
-        print("12. ▶️  Ligar Motor (Start)")
-        print("13. ⏹️  Desligar Motor (Stop)")
-        print("14. ℹ️  Ver Status do Motor (Status)")
-        print("15. 🔄 Atualizar Sync Engine (Verificar Updates)")
-        print("\n16. Sair")
-        print("="*45)
+        print("6. 🚀 Forçar Sincronização Agora")
+        print("7. 🧪 Test-Drive / Dry-Run")
+        print("8. 📊 Relatório de Tamanho  | 9. 🧹 Higienizador / Colisão")
+        print("10. 🔎 Analisar Erros       | 11. 🩺 Doctor")
+        print("\n--- Motor de Fundo ---")
+        print("12. ▶️ Ligar  | 13. ⏹️ Desligar | 14. ℹ️ Status")
+        print("15. 🔄 Atualizar")
+        print("\n[Enter] Sair\n" + "="*45)
         
-        escolha = input("Escolha uma opção (1-16): ").strip()
+        escolha = input("Opção: ").strip()
+        if escolha == '': clear_screen(); print("Até logo!\n"); break
         
         if escolha == '1':
-            clear_screen()
-            print("--- Adicionando Nova Conta ---")
-            profile = input("Nome do Perfil (ex: GDrive Pessoal, OneDrive Empresa): ").strip()
-            if not profile: 
-                pause(); continue
-                
-            remote = None
-            while True:
-                clear_screen()
-                print(f"--- Vinculando Nuvem ao Perfil '{profile}' ---")
-                rclone_out = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
-                remotes = [r.strip(':') for r in rclone_out.stdout.strip().split('\n') if r.strip()]
-
-                print("\nConexões Rclone disponíveis:")
-                if not remotes: print("  [ Nenhuma conexão encontrada ]")
-                else:
-                    for i, r in enumerate(remotes): print(f"  [{i+1}] {r}")
-                
-                print("\n  [N] Criar nova conexão no Rclone")
-                print("  [C] Cancelar")
-                op_remote = input("\nEscolha o número da nuvem, 'N' para nova ou 'C' para cancelar: ").strip().lower()
-
-                if op_remote == 'c': break
-                elif op_remote == 'n':
-                    clear_screen(); subprocess.run(["rclone", "config"]); continue
-                elif op_remote.isdigit() and 0 <= int(op_remote) - 1 < len(remotes):
-                    remote = remotes[int(op_remote) - 1]; break
-                else: 
-                    print("❌ Opção inválida."); time.sleep(1.5)
-
-            if not remote: continue
-
-            conflitos_remote = [acc for acc in config.get("ACCOUNTS", []) if acc["REMOTE_NAME"] == remote]
-            if conflitos_remote:
-                print(f"\n⚠️  AVISO: A nuvem '{remote}' já está vinculada.")
-                confirma = input("Deseja usar essa mesma nuvem novamente? (S/N): ").strip().lower()
-                if confirma != 's': pause(); continue
-
-            default_local = f"~/{remote}"
-            local = input(f"\nCaminho da pasta local (Enter para usar '{default_local}'): ").strip()
-            if not local:
-                local = default_local
-                print(f"📂 Diretório definido: {local}")
-
-            local_expanded = os.path.expanduser(local)
-            conflitos_local = [acc for acc in config.get("ACCOUNTS", []) if os.path.expanduser(acc["LOCAL_DIR"]) == local_expanded]
-            if conflitos_local:
-                print(f"\n⚠️  AVISO: A pasta '{local}' já está sendo usada.")
-                confirma_local = input("Deseja compartilhar esta pasta (Criar Ponte)? (S/N): ").strip().lower()
-                if confirma_local != 's': pause(); continue
+            profile = input("\nNome do Perfil [Enter p/ voltar]: ").strip()
+            if not profile: continue
+            
+            rclone_out = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+            remotes = [r.strip(':') for r in rclone_out.stdout.strip().split('\n') if r.strip()]
+            for i, r in enumerate(remotes): print(f"  [{i+1}] {r}")
+            op_remote = input("\nNúmero da nuvem [Enter p/ voltar]: ").strip()
+            if not op_remote or not op_remote.isdigit() or int(op_remote)-1 >= len(remotes): continue
+            
+            remote = remotes[int(op_remote) - 1]
+            local = input(f"\nPasta local (Enter para '~/{remote}'): ").strip() or f"~/{remote}"
                 
             safe_name = "".join([c for c in profile.lower().replace(" ", "_") if c.isalnum() or c=='_'])
-            nova_conta = {
-                "PROFILE_NAME": profile,
-                "REMOTE_NAME": remote,
-                "LOCAL_DIR": local,
-                "IGNORE_PATTERNS": ["venv", ".venv", "__pycache__", ".git", "site-packages", "Personal Vault", "Cofre Pessoal", "*.tmp", "Thumbs.db", ".DS_Store"],
-                "DB_FILE": f"sync_metadata_{safe_name}.db",
-                "FILTER_FILE": f"excludes_{safe_name}.txt"
-            }
-            config.setdefault("ACCOUNTS", []).append(nova_conta)
-            save_config(config)
-            print(f"\n✅ Conta '{profile}' adicionada com sucesso!")
-            sys_tools.manage_service("reload", LOG_FILE)
-            pause()
+            config.setdefault("ACCOUNTS", []).append({
+                "PROFILE_NAME": profile, "REMOTE_NAME": remote, "LOCAL_DIR": local,
+                "IGNORE_PATTERNS": ["venv", ".venv", "__pycache__", ".git", "Personal Vault", "Cofre Pessoal", "*.tmp", ".DS_Store"],
+                "DB_FILE": f"sync_metadata_{safe_name}.db", "FILTER_FILE": f"excludes_{safe_name}.txt"
+            })
+            save_config(config); sys_tools.manage_service("reload", LOG_FILE); print("\n✅ Salvo!"); pause()
 
         elif escolha == '2':
-            clear_screen()
-            print("--- Contas Configuradas ---")
-            contas = config.get("ACCOUNTS", [])
-            if not contas: print("\nNenhuma conta configurada ainda.")
-            for i, acc in enumerate(contas):
-                print(f"\n[{i+1}] {acc['PROFILE_NAME']}\n    Nuvem: {acc['REMOTE_NAME']}\n    Pasta: {acc['LOCAL_DIR']}")
+            clear_screen(); print("--- Contas ---")
+            for i, acc in enumerate(config.get("ACCOUNTS", [])): print(f"[{i+1}] {acc['PROFILE_NAME']} ({acc['LOCAL_DIR']})")
             pause()
                 
         elif escolha == '3':
-            while True:
-                clear_screen()
-                contas = config.get("ACCOUNTS", [])
-                if not contas: break
-                
-                print("--- Remover Conta ---")
-                for i, acc in enumerate(contas): print(f"[{i+1}] {acc['PROFILE_NAME']}")
-                print("[C] Voltar")
-                
-                op = input("\nDigite o número para apagar ou 'C' para voltar: ").strip().lower()
-                if op == 'c': break
-                if op.isdigit() and 1 <= int(op) <= len(contas):
-                    apagada = contas.pop(int(op)-1)
-                    
-                    db_path = os.path.join(CONFIG_DIR, apagada.get("DB_FILE", ""))
-                    filter_path = os.path.join(CONFIG_DIR, apagada.get("FILTER_FILE", ""))
-                    
-                    if db_path and os.path.exists(db_path):
-                        try: os.remove(db_path)
-                        except OSError: pass
-                        
-                    if filter_path and os.path.exists(filter_path):
-                        try: os.remove(filter_path)
-                        except OSError: pass
-                    
-                    save_config(config); sys_tools.manage_service("reload", LOG_FILE)
-                    print(f"\n🗑️ Conta '{apagada['PROFILE_NAME']}' e arquivos residuais removidos com sucesso!")
-                    pause()
-                else: 
-                    print("❌ Opção inválida."); time.sleep(1.5)
+            contas = config.get("ACCOUNTS", [])
+            for i, acc in enumerate(contas): print(f"[{i+1}] {acc['PROFILE_NAME']}")
+            op = input("\nNúmero para apagar [Enter para voltar]: ").strip()
+            if op.isdigit() and 1 <= int(op) <= len(contas):
+                apagada = contas.pop(int(op)-1)
+                save_config(config); sys_tools.manage_service("reload", LOG_FILE); print(f"\n🗑️ Removida: {apagada['PROFILE_NAME']}"); pause()
                 
         elif escolha == '4':
             while True:
-                clear_screen()
-                print("--- Configurações Globais ---")
-                print(f"1. Intervalo de Sincronização (Atual: {config.get('SYNC_INTERVAL', 300)}s)")
-                print(f"2. Limite de Banda (Atual: {config.get('BW_LIMIT', '0')} [0 = Sem limite])")
-                print(f"3. Tamanho Máximo de Arquivo (Atual: {config.get('MAX_SIZE', '0')} [0 = Sem limite])")
-                
-                atual_rep = config.get('REPORT_DIR', '')
-                print(f"4. Pasta de Relatórios (Atual: {atual_rep if atual_rep else 'Padrão (~/.config/sync_engine)'})")
-                print("C. Voltar")
-                
-                op_cfg = input("\nEscolha uma opção: ").strip().lower()
-                if op_cfg == 'c': break
-                elif op_cfg == '1':
-                    novo = input("\nNovo tempo em segundos (ex: 300): ")
-                    if novo.isdigit() and int(novo) >= 30:
-                        config["SYNC_INTERVAL"] = int(novo); save_config(config); sys_tools.manage_service("reload", LOG_FILE)
-                        print("✅ Intervalo alterado."); pause()
-                    else: print("❌ Inválido. Mínimo 30s."); time.sleep(1.5)
-                elif op_cfg == '2':
-                    novo = input("\nLimite de banda (ex: 10M, 500K, 0 = ilimitado): ").strip()
-                    if novo:
-                        config["BW_LIMIT"] = novo; save_config(config); sys_tools.manage_service("reload", LOG_FILE)
-                        print("✅ Limite de banda alterado."); pause()
-                elif op_cfg == '3':
-                    novo = input("\nTamanho máximo de arquivo (ex: 500M, 1G, 0 = ilimitado): ").strip()
-                    if novo:
-                        config["MAX_SIZE"] = novo; save_config(config); sys_tools.manage_service("reload", LOG_FILE)
-                        print("✅ Tamanho máximo alterado."); pause()
-                elif op_cfg == '4':
-                    print("\nDefina a pasta para salvar os relatórios em texto gerados pelo assistente.")
-                    print("Exemplos: ~/Documentos | /tmp | /var/log")
-                    print("Para voltar ao padrão oculto (~/.config/sync_engine), aperte Enter deixando vazio.")
-                    novo = input("\nNovo caminho: ").strip()
-                    config["REPORT_DIR"] = novo
-                    save_config(config)
-                    print("✅ Caminho dos relatórios atualizado!"); pause()
-                else: print("❌ Opção inválida."); time.sleep(1.5)
+                clear_screen(); print("--- Globais ---")
+                print(f"1. Intervalo ({config.get('SYNC_INTERVAL', 300)}s) | 2. Banda ({config.get('BW_LIMIT', '0')})")
+                print(f"3. Max Size ({config.get('MAX_SIZE', '0')})    | 4. Pasta Relatórios")
+                op_cfg = input("\nOpção [Enter p/ voltar]: ").strip()
+                if not op_cfg: break
+                elif op_cfg == '1': config["SYNC_INTERVAL"] = int(input("Segundos: ") or 300)
+                elif op_cfg == '2': config["BW_LIMIT"] = input("Limite (ex: 10M, 0): ").strip()
+                elif op_cfg == '3': config["MAX_SIZE"] = input("Max (ex: 1G, 0): ").strip()
+                elif op_cfg == '4': config["REPORT_DIR"] = input("Caminho: ").strip()
+                save_config(config); sys_tools.manage_service("reload", LOG_FILE)
 
         elif escolha == '5':
             contas = config.get("ACCOUNTS", [])
-            if not contas: 
-                clear_screen(); print("\nNenhuma conta configurada."); pause(); continue
-            
-            clear_screen()
-            print("--- Gerenciar Filtros Globais ---")
             for i, acc in enumerate(contas): print(f"[{i+1}] {acc['PROFILE_NAME']}")
-            print("[C] Voltar")
-            
-            op_acc = input("\nEscolha a conta: ").strip().lower()
-            if op_acc == 'c': continue
+            op_acc = input("\nConta [Enter p/ voltar]: ").strip()
             if op_acc.isdigit() and 1 <= int(op_acc) <= len(contas):
                 conta = contas[int(op_acc) - 1]
-                padroes = conta.get("IGNORE_PATTERNS", conta.get("SKIP_DIRS", []))
-                
+                padroes = conta.get("IGNORE_PATTERNS", [])
                 while True:
-                    clear_screen()
-                    print(f"--- Filtros de '{conta['PROFILE_NAME']}' ---")
-                    if not padroes: print("  [ Nenhum filtro configurado ]")
+                    clear_screen(); print(f"--- Filtros: {conta['PROFILE_NAME']} ---")
                     for j, p in enumerate(padroes): print(f"  [{j+1}] {p}")
-                    
-                    print("\n[A] Adicionar  [R] Remover  [H] Ajuda  [C] Salvar e Sair")
-                    acao = input("Escolha uma ação: ").strip().lower()
-                    
-                    if acao == 'c':
-                        conta["IGNORE_PATTERNS"] = padroes; save_config(config); sys_tools.manage_service("reload", LOG_FILE)
-                        print("\n✅ Filtros salvos!"); pause(); break
-                    elif acao == 'a':
-                        novo = input("\nDigite o padrão: ").strip()
-                        if novo and novo not in padroes: padroes.append(novo); print(f"✅ '{novo}' adicionado!"); time.sleep(1)
-                    elif acao == 'r':
-                        num = input("\nNúmero para remover: ").strip()
-                        if num.isdigit() and 1 <= int(num) <= len(padroes): padroes.pop(int(num)-1); time.sleep(1)
-                    elif acao == 'h':
-                        clear_screen()
-                        print("="*45)
-                        print("--- Guia de Filtros e Exclusões ---")
-                        print("\n▶ 1. ARQUIVO .nosync")
-                        print("  Crie um arquivo '.nosync' dentro de qualquer pasta para ignorá-la.")
-                        print("\n▶ 2. CURINGAS (* e ?)")
-                        print("  * : Qualquer texto (ex: *.tmp)")
-                        print("  ? : 1 caractere (ex: cam_?.dav)")
-                        print("\n▶ 3. ANCORAGEM NA RAIZ (/)")
-                        print("  Use '/' no começo para aplicar apenas na pasta principal.")
-                        print("="*45)
-                        pause()
-                    else: print("❌ Opção inválida."); time.sleep(1)
-            else: print("❌ Conta inválida."); time.sleep(1.5)
+                    print("\n[A] Adicionar  [R] Remover  [S] Salvar e Sair  [C] Cancelar Alterações")
+                    acao = input("Ação: ").strip().lower()
+                    if acao == 'c' or acao == '': break
+                    elif acao == 's': conta["IGNORE_PATTERNS"] = padroes; save_config(config); sys_tools.manage_service("reload", LOG_FILE); break
+                    elif acao == 'a': novo = input("Padrão: ").strip(); padroes.append(novo) if novo else None
+                    elif acao == 'r': 
+                        num = input("Número: ").strip()
+                        if num.isdigit() and 1 <= int(num) <= len(padroes): padroes.pop(int(num)-1)
 
-        elif escolha == '6': run_now(); pause()
-        elif escolha == '7': run_dry_run(); pause()
-        elif escolha == '8': run_size_report(); pause()
+        elif escolha == '6': run_now()
+        elif escolha == '7': run_dry_run()
+        elif escolha == '8': run_size_report()
         elif escolha == '9': run_filename_cleaner()
         elif escolha == '10': run_analyze_errors()
         elif escolha == '11': run_doctor()
@@ -981,8 +536,6 @@ def run_config_wizard():
         elif escolha == '13': clear_screen(); sys_tools.manage_service("stop", LOG_FILE); pause()
         elif escolha == '14': clear_screen(); sys_tools.manage_service("status", LOG_FILE); pause()
         elif escolha == '15': run_update()
-        elif escolha == '16': clear_screen(); print("Saindo... Até logo!\n"); break
-        else: print("❌ Opção inválida."); time.sleep(1)
 
 # ==========================================
 # PROCESSAMENTO DE BACKGROUND E METADADOS
@@ -994,41 +547,20 @@ def init_db(db_path):
     cursor.execute("CREATE TABLE metadata (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, path TEXT NOT NULL, parent_dir TEXT NOT NULL, is_dir BOOLEAN NOT NULL, size INTEGER, mod_time TEXT, has_nosync BOOLEAN DEFAULT 0)")
     cursor.execute("CREATE INDEX idx_path ON metadata(path)")
     cursor.execute("CREATE INDEX idx_parent ON metadata(parent_dir)")
-    cursor.execute("CREATE INDEX idx_source ON metadata(source)")
     conn.commit()
     return conn
 
 def scan_local(conn, local_dir, ignore_patterns):
     records = []
-    def matches_pattern(name, rel_path):
-        rel_path_unix = rel_path.replace("\\", "/")
-        for p in ignore_patterns:
-            p_unix = p.replace("\\", "/")
-            if p_unix.startswith('/'):
-                if fnmatch.fnmatch(rel_path_unix, p_unix[1:]): return True
-            else:
-                if fnmatch.fnmatch(name, p_unix): return True
-        return False
-        
     def fast_scan(current_path, parent_rel=""):
         try:
             with os.scandir(current_path) as it:
                 entries = list(it)
                 has_nosync = any(e.name == '.nosync' for e in entries)
-                
                 for entry in entries:
                     rel_path = (os.path.join(parent_rel, entry.name) if parent_rel else entry.name).replace("\\", "/")
-                    
-                    if entry.name == '.nosync':
-                        records.append(('local', rel_path, parent_rel.replace("\\", "/"), False, 0, '', True))
-                        continue 
-                        
-                    if has_nosync:
-                        continue 
-                        
-                    if matches_pattern(entry.name, rel_path): 
-                        continue 
-                        
+                    if entry.name == '.nosync': records.append(('local', rel_path, parent_rel.replace("\\", "/"), False, 0, '', True)); continue
+                    if has_nosync: continue
                     try:
                         if entry.is_dir(follow_symlinks=False):
                             records.append(('local', rel_path, parent_rel.replace("\\", "/"), True, 0, '', False))
@@ -1036,11 +568,8 @@ def scan_local(conn, local_dir, ignore_patterns):
                         else:
                             stat = entry.stat(follow_symlinks=False)
                             records.append(('local', rel_path, parent_rel.replace("\\", "/"), False, stat.st_size, str(stat.st_mtime), False))
-                    except OSError:
-                        pass
-        except OSError: 
-            pass
-            
+                    except OSError: pass
+        except OSError: pass
     fast_scan(local_dir)
     conn.executemany("INSERT INTO metadata (source, path, parent_dir, is_dir, size, mod_time, has_nosync) VALUES (?, ?, ?, ?, ?, ?, ?)", records)
     conn.commit()
@@ -1048,237 +577,120 @@ def scan_local(conn, local_dir, ignore_patterns):
 def scan_remote(conn, remote_name, ignore_patterns):
     records = []
     cmd = ["rclone", "lsjson", f"{remote_name}:", "--fast-list", "--recursive"]
-    
-    for p in ignore_patterns:
-        p_unix = p.replace("\\", "/")
-        cmd.extend(["--exclude", f"{p_unix}/**", "--exclude", f"{p_unix}/", "--exclude", p_unix])
-        
     try:
-        # A flag encoding="utf-8" salva o script no Windows de dar crash com acentos ("Acadêmicos")
+        # Importante: Redirecionamento DEVNULL aqui blinda o comando no Windows
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if result.stdout.strip():
             for item in json.loads(result.stdout):
                 path = item.get("Path", "")
-                
                 parts = path.split("/")
                 parent_dir = "/".join(parts[:-1]) if len(parts) > 1 else ""
-                is_nosync = (parts[-1] == '.nosync')
-                
-                records.append(('remote', path, parent_dir, item.get("IsDir", False), item.get("Size", 0), item.get("ModTime", ""), is_nosync))
-                
+                records.append(('remote', path, parent_dir, item.get("IsDir", False), item.get("Size", 0), item.get("ModTime", ""), (parts[-1] == '.nosync')))
             conn.executemany("INSERT INTO metadata (source, path, parent_dir, is_dir, size, mod_time, has_nosync) VALUES (?, ?, ?, ?, ?, ?, ?)", records)
             conn.commit()
-    except Exception: 
-        pass
+    except Exception: pass
 
 def generate_filters(conn, filter_file, ignore_patterns):
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT parent_dir FROM metadata WHERE has_nosync = 1 UNION SELECT DISTINCT parent_dir FROM metadata WHERE path LIKE '%/.nosync' OR path = '.nosync'")
     filters = []
-    
     for p in ignore_patterns:
         p_clean = p.replace("\\", "/")
-        filters.append(f"- {p_clean}")
-        filters.append(f"- {p_clean}/**")
-        filters.append(f"- {p_clean}/")
-        
+        filters.extend([f"- {p_clean}", f"- {p_clean}/**", f"- {p_clean}/"])
     for (folder,) in cursor.fetchall():
         clean_folder = folder.replace("\\", "/").strip("/")
-        if clean_folder: 
-            filters.append(f"- /{clean_folder}/")
-            filters.append(f"- /{clean_folder}/**")
-            
+        if clean_folder: filters.extend([f"- /{clean_folder}/", f"- /{clean_folder}/**"])
     with open(filter_file, "w", encoding="utf-8") as f:
         for line in filters: f.write(line + "\n")
         
 def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir, profile_name):
-    start_time = time.time()
-    
     safe_profile = "".join([c for c in profile_name.lower().replace(" ", "_") if c.isalnum() or c=='_'])
     log_file = os.path.join(report_dir, f"ultimo_ciclo_auto_{safe_profile}.txt")
     
-    with open(log_file, "w", encoding="utf-8") as f:
-        f.write("="*45 + "\n")
-        f.write(f"🔄 RELATÓRIO DE CICLO AUTOMÁTICO (BACKGROUND)\n")
-        f.write(f"Conta: {profile_name}\n")
-        f.write(f"Data gerada: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
-        f.write("="*45 + "\n\n")
-
-    cmd = [
-        "rclone", "bisync", local_dir, f"{remote_name}:",
-        f"--filter-from={filter_file}", "--transfers=16", "--checkers=16",
-        "--create-empty-src-dirs", "--fix-case", "-v",
-        f"--log-file={log_file}"
-    ]
-    if bw_limit != "0": cmd.append(f"--bwlimit={bw_limit}")
-    if max_size != "0": cmd.append(f"--max-size={max_size}")
-
-    result = subprocess.run(cmd)
+    cmd = ["rclone", "bisync", local_dir, f"{remote_name}:", f"--filter-from={filter_file}", "--create-empty-src-dirs", "--fix-case", "-v", f"--log-file={log_file}"]
     
-    with open(log_file, "r", encoding="utf-8") as f:
-        log_text = f.read()
+    # BURACO NEGRO DO WINDOWS: O redirecionamento explícito abaixo impede que o pythonw sofra um erro fatal de Handle Inválido
+    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    with open(log_file, "r", encoding="utf-8") as f: log_text = f.read()
     
     if result.returncode != 0 and "prior lock file found" in log_text.lower():
         lock_match = re.search(r'prior lock file found:\s*([^\r\n]+)', log_text, re.IGNORECASE)
         if lock_match:
-            lock_path = lock_match.group(1).strip()
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(f"\n⚠️  Trava residual removida automaticamente: {lock_path}\n")
-            subprocess.run(["rclone", "deletefile", lock_path])
-            
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write("\n🔄 Retomando sincronização...\n")
-            result = subprocess.run(cmd)
-            with open(log_file, "r", encoding="utf-8") as f:
-                log_text = f.read()
+            subprocess.run(["rclone", "deletefile", lock_match.group(1).strip()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with open(log_file, "r", encoding="utf-8") as f: log_text = f.read()
 
-    has_transfers, err_msg = analyze_sync_logic(log_text)
+    has_transfers = any(m in log_text for m in ["Copied (", "Deleted:", "Moved (", "Updated:", "Applying changes"])
     
     if result.returncode == 0:
         clean_log_file(log_file)
-        if has_transfers:
-            log_alteracoes = os.path.join(report_dir, f"ultimo_ciclo_COM_ALTERACOES_{safe_profile}.txt")
-            shutil.copy2(log_file, log_alteracoes)
-        return True, time.time() - start_time, has_transfers, ""
+        return True, has_transfers, ""
+    elif "resync" in log_text.lower() or "not found" in log_text.lower():
+        cmd.append("--resync")
+        resync_result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(log_file, "r", encoding="utf-8") as f: resync_log = f.read()
+        has_resync = any(m in resync_log for m in ["Copied (", "Deleted:", "Moved (", "Updated:"])
+        clean_log_file(log_file)
+        return resync_result.returncode == 0, has_resync, ""
     else:
-        if "resync" in log_text.lower() or "not found" in log_text.lower():
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write("\n⚠️ Varredura de cura (--resync) acionada automaticamente...\n")
-            cmd.append("--resync")
-            resync_result = subprocess.run(cmd)
-            
-            with open(log_file, "r", encoding="utf-8") as f:
-                resync_log_text = f.read()
-                
-            has_resync_transfers, err_msg = analyze_sync_logic(resync_log_text)
-            clean_log_file(log_file)
-            
-            if resync_result.returncode == 0:
-                if has_resync_transfers:
-                    log_alteracoes = os.path.join(report_dir, f"ultimo_ciclo_COM_ALTERACOES_{safe_profile}.txt")
-                    shutil.copy2(log_file, log_alteracoes)
-                return True, time.time() - start_time, has_resync_transfers, ""
-            else:
-                return False, 0, False, err_msg
-        else:
-            clean_log_file(log_file)
-            return False, 0, False, err_msg
+        clean_log_file(log_file)
+        errors = [line for line in log_text.split('\n') if "ERROR" in line]
+        return False, False, errors[0].split("ERROR :")[-1].strip() if errors else "Erro fatal."
 
-# ==========================================
-# MÓDULO DE AJUDA (HELP)
-# ==========================================
 def print_help():
-    ajuda = f"""
-=== Sync Engine Multi-Contas (v{VERSION}) ===
+    print(f"\n=== Sync Engine Multi-Contas (v{VERSION}) ===")
+    print("Uso: sync-engine [COMANDO]")
+    print("  config         Assistente interativo (Contas, Filtros, Limites).")
+    print("  now            🚀 Sincroniza AGORA (força o envio/download).")
+    print("  start/stop     Liga/Desliga o serviço invisível.")
+    print("  status/reload  Checa logs ou reinicia o serviço invisível.")
 
-Uso: sync-engine [COMANDO]
-
-Comandos Principais:
-  config         Assistente interativo (Contas, Filtros e Limites).
-  now            🚀 Sincroniza AGORA (força o envio/download imediato).
-  test           🧪 Simula sincronização (Dry-Run) sem alterar nada.
-  clean          🧹 Inicia o higienizador de nomes de arquivos.
-  analyze        🔎 Analisa o log da última sincronização para dar dicas de erros.
-  doctor         🩺 Diagnóstico de sistema (verifica rclone, systemd, etc).
-  update         🔄 Verifica e instala novas atualizações do GitHub.
-
-Gerenciamento do Motor de Fundo:
-  start          LIGA o serviço em segundo plano (inicia com o sistema).
-  stop           DESLIGA e remove o serviço em segundo plano.
-  status         Exibe o status e o histórico de logs do motor.
-  reload         Reinicia o serviço atual.
-
-Utilitários:
-  version, -v    Exibe a versão atual do script.
-  help, -h       Exibe esta ajuda.
-"""
-    print(ajuda.strip())
-
-# ==========================================
-# EXECUÇÃO PRINCIPAL (ROTEADOR DE COMANDOS)
-# ==========================================
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         comando = sys.argv[1].lower()
-        if comando in ["help", "-h", "--help"]: print_help()
-        elif comando in ["version", "-v", "--version"]: print(f"Sync Engine v{VERSION}")
-        elif comando == "config": run_config_wizard()
+        if comando == "config": run_config_wizard()
         elif comando == "now": run_now()
-        elif comando == "test": run_dry_run()
-        elif comando == "clean": run_filename_cleaner()
-        elif comando == "analyze": run_analyze_errors()
-        elif comando == "doctor": run_doctor()
-        elif comando == "update": run_update()
         elif comando == "start": sys_tools.manage_service("start", LOG_FILE)
         elif comando == "stop": sys_tools.manage_service("stop", LOG_FILE)
         elif comando == "status": sys_tools.manage_service("status", LOG_FILE)
         elif comando == "reload": sys_tools.manage_service("reload", LOG_FILE)
-        else:
-            clear_screen()
-            print(f"❌ Erro: Comando desconhecido '{sys.argv[1]}'\n")
-            print_help()
+        else: run_config_wizard() # Qualquer comando não reconhecido abre o menu por padrão
         sys.exit(0)
     else:
         is_terminal = False
         try:
-            if sys.stdout is not None and sys.stdout.isatty():
-                is_terminal = True
-        except Exception:
-            pass
-            
-        if is_terminal:
-            clear_screen()
-            print("❌ Erro: Nenhum comando informado.\n")
-            print_help()
-            sys.exit(1)
-        # Se is_terminal for False (está rodando invisível no pythonw do Windows), ele desce e entra no loop principal!
+            if sys.stdout is not None and sys.stdout.isatty(): is_terminal = True
+        except Exception: pass
+        if is_terminal: print_help(); sys.exit(1)
         
     try:
         logger.info("Motor Sync Engine Iniciado em Background.")
         while True:
             config = load_config()
-            SYNC_INTERVAL = config.get("SYNC_INTERVAL", 300)
-            BW_LIMIT = config.get("BW_LIMIT", "0")
-            MAX_SIZE = config.get("MAX_SIZE", "0")
             ACCOUNTS = config.get("ACCOUNTS", [])
-            report_dir = get_report_dir(config)
-            
-            if not ACCOUNTS:
-                sys.exit(1)
+            if not ACCOUNTS: sys.exit(1)
 
             for acc in ACCOUNTS:
-                profile_name = acc.get("PROFILE_NAME", "Desconhecido")
+                profile = acc.get("PROFILE_NAME", "Local")
                 local_dir = os.path.expanduser(acc["LOCAL_DIR"])
-                
                 os.makedirs(local_dir, exist_ok=True)
                 
-                remote_name = acc["REMOTE_NAME"]
-                ignore_patterns = acc.get("IGNORE_PATTERNS", acc.get("SKIP_DIRS", []))
+                db_path, filter_file = os.path.join(CONFIG_DIR, acc["DB_FILE"]), os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
+                db_conn = init_db(db_path)
+                scan_local(db_conn, local_dir, acc.get("IGNORE_PATTERNS", []))
+                scan_remote(db_conn, acc["REMOTE_NAME"], acc.get("IGNORE_PATTERNS", []))
+                generate_filters(db_conn, filter_file, acc.get("IGNORE_PATTERNS", []))
+                db_conn.close()
                 
-                db_path = os.path.join(CONFIG_DIR, acc["DB_FILE"])
-                filter_file = os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
+                success, transfers, err_msg = run_sync(local_dir, acc["REMOTE_NAME"], filter_file, config.get("BW_LIMIT", "0"), config.get("MAX_SIZE", "0"), get_report_dir(config), profile)
                 
-                logger.debug(f"[{profile_name}] Gerando filtros e lendo metadados...")
-                db_connection = init_db(db_path)
-                scan_local(db_connection, local_dir, ignore_patterns)
-                scan_remote(db_connection, remote_name, ignore_patterns)
-                generate_filters(db_connection, filter_file, ignore_patterns)
-                db_connection.close()
-                
-                success, tempo, has_transfers, err_msg = run_sync(local_dir, remote_name, filter_file, BW_LIMIT, MAX_SIZE, report_dir, profile_name)
-                
-                if success and has_transfers:
-                    logger.info(f"[{profile_name}] Transferência concluída em {tempo:.1f}s.")
-                    sys_tools.send_notification(f"Sync: {profile_name}", f"Atualizado com sucesso ({tempo:.1f}s).")
-                elif success and not has_transfers:
-                    logger.info(f"[{profile_name}] Checagem concluída. Nenhuma alteração detectada.")
+                if success and transfers:
+                    logger.info(f"[{profile}] Sincronização concluída com alterações.")
+                    sys_tools.send_notification("Sync Engine", f"Conta '{profile}' sincronizada.")
                 elif not success:
-                    clean_error = err_msg.replace('"', '').replace("'", "")[:120]
-                    logger.error(f"[{profile_name}] Falha na sincronização: {clean_error}")
-                    sys_tools.send_notification(f"Erro: {profile_name}", f"Falha: {clean_error}", "critical")
-                    
-            time.sleep(SYNC_INTERVAL)
+                    logger.error(f"[{profile}] Erro: {err_msg}")
             
-    except KeyboardInterrupt:
-        logger.info("Sincronização interrompida pelo usuário.")
-        sys_tools.send_notification("Sync Engine", "Sincronização desligada.")
+            time.sleep(config.get("SYNC_INTERVAL", 300))
+    except Exception as e:
+        logger.error(f"FALHA CRÍTICA DO MOTOR: {e}")
