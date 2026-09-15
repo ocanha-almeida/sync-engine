@@ -1,46 +1,33 @@
-#!/usr/bin/env bash
-
-echo "🚀 Iniciando a instalação do Sync Engine (Linux User Mode)..."
+#!/bin/bash
+echo "🚀 Iniciando a instalação do Sync Engine (Linux)..."
 
 INSTALL_DIR="$HOME/.local/share/sync-engine"
 BIN_DIR="$HOME/.local/bin"
-SERVICE_FILE="$HOME/.config/systemd/user/sync-engine.service"
 
-echo "🛑 Parando serviços antigos..."
-systemctl --user stop sync-engine.service 2>/dev/null
-systemctl --user disable sync-engine.service 2>/dev/null
-
-echo "🧹 Limpando módulos antigos..."
-rm -rf "$INSTALL_DIR"
+# Cria as pastas necessárias silenciosamente
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$BIN_DIR"
-mkdir -p "$HOME/.config/systemd/user"
 
-echo "📦 Copiando novos módulos (Arquitetura 6.0)..."
+# ⚠️ MUDANÇA V6.0: Copia todos os arquivos Python da pasta atual (módulos e motor)
 cp *.py "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/sync_engine.py"
 
-echo "🔗 Criando atalho no terminal..."
+# Aplica as permissões e recria o atalho global de forma forçada
+chmod +x "$INSTALL_DIR/sync_engine.py"
 ln -sf "$INSTALL_DIR/sync_engine.py" "$BIN_DIR/sync-engine"
 
-echo "⚙️ Configurando serviço invisível (Systemd)..."
-cat <<EOF > "$SERVICE_FILE"
-[Unit]
-Description=Sync Engine Background Motor
-After=network.target
+echo "✅ Arquivos instalados em $INSTALL_DIR"
+echo "✅ Comando 'sync-engine' vinculado em $BIN_DIR"
 
-[Service]
-ExecStart=/usr/bin/env python3 $INSTALL_DIR/sync_engine.py
-Restart=on-failure
-Environment=PYTHONUNBUFFERED=1
+# Verifica se a pasta do atalho está na memória do terminal
+if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+    echo ""
+    echo "⚠️  AVISO CRÍTICO: O diretório $BIN_DIR não está no seu PATH."
+    echo "Para que o comando 'sync-engine' funcione de qualquer lugar,"
+    echo "adicione a seguinte linha ao final do seu arquivo ~/.bashrc ou ~/.zshrc:"
+    echo ""
+    echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
+    echo ""
+    echo "Depois, rode: source ~/.bashrc"
+fi
 
-[Install]
-WantedBy=default.target
-EOF
-
-systemctl --user daemon-reload
-systemctl --user enable sync-engine.service
-
-echo "🎉 Instalação concluída com sucesso!"
-echo "💡 Certifique-se de que $BIN_DIR está no seu PATH (geralmente já está no Ubuntu)."
-echo "Execute 'sync-engine' para abrir o painel!"
+echo "🎉 Instalação concluída!"
