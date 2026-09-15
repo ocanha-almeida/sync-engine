@@ -56,7 +56,8 @@ Você precisa baixar e instalar estas ferramentas manualmente antes de rodar o i
      ```bash
      sudo ./install.sh
      ```
-   * 🪟 **No Windows:** Localize a pasta clonada, clique com o botão direito sobre o arquivo `install.ps1` e selecione **"Executar com o PowerShell"**. *(Uma tela azul pedirá permissão de Administrador; basta confirmar).*
+   * 🪟 **No Windows:** Abra o PowerShell, navegue até a pasta clonada, e execute:
+   ```powershell -ExecutionPolicy Bypass -File .\install.ps1```
 
 3. **Configure as suas contas de nuvem:**
    Tanto no Windows quanto no Linux, abra um terminal e digite (com o seu usuário comum, NÃO use sudo/admin):
@@ -145,6 +146,6 @@ Para transformar seu PC num verdadeiro "servidor":
 Para remover completamente o Sync Engine do seu sistema (limpando o executável raiz, atalhos e os serviços de fundo):
 
 *   **No Linux:** `sudo ./install.sh uninstall`
-*   **No Windows:** Clique com o botão direito no `install.ps1` e escolha "Executar com o PowerShell", digitando `uninstall` quando o script oferecer suporte ou rodando via terminal: `.\install.ps1 uninstall`
+*   **No Windows:** Clique com o botão direito no `install.ps1` e escolha "Executar com o PowerShell", digitando `uninstall` quando o script oferecer suporte ou rodando via terminal: `powershell -ExecutionPolicy Bypass -File .\install.ps1 uninstall`
 
 *(As suas regras `config.json` e metadados `.db` serão mantidos em `~/.config/sync_engine/` por segurança).*

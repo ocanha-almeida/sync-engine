@@ -12,7 +12,7 @@ $TaskName = "SyncEngine_Background"
 
 if ($Action -eq "uninstall") {
     Write-Host "🗑️  Desinstalando o Sync Engine do Windows..." -ForegroundColor Yellow
-    schtasks /Delete /TN $TaskName /F *>$null
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Write-Host "✅ Serviço de fundo removido do Agendador de Tarefas." -ForegroundColor Green
     
     if (Test-Path $InstallDir) {
@@ -41,8 +41,6 @@ Copy-Item -Path "$PSScriptRoot\*.py" -Destination $InstallDir -Force
 
 $BatPath = Join-Path $InstallDir "sync-engine.cmd"
 $BatContent = "@echo off`npython `"$InstallDir\sync_engine.py`" %*"
-
-# A correção do espaço foi aplicada na linha abaixo:
 Set-Content -Path $BatPath -Value $BatContent -Encoding Ascii
 
 Write-Host "✅ Arquivos copiados para $InstallDir" -ForegroundColor Green
@@ -54,18 +52,15 @@ if ($path -notlike "*$InstallDir*") {
     Write-Host "✅ Adicionado ao PATH do Usuário." -ForegroundColor Green
 }
 
-$PythonExe = (Get-Command python.exe -ErrorAction Stop).Source
-$PythonwExe = $PythonExe -replace "python.exe", "pythonw.exe"
+Write-Host "⚙️  Configurando serviço invisível para o usuário: $env:USERNAME..." -ForegroundColor Cyan
 
-if (!(Test-Path $PythonwExe)) {
-    Write-Warning "Aviso: pythonw.exe não localizado. Usando python.exe padrão."
-    $PythonwExe = $PythonExe
-}
+# Usamos PowerShell oculto para chamar o Python. Isso evita a quebra do pythonw e permite capturar os erros críticos (crashes).
+$ActionTask = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command `"python '$InstallDir\sync_engine.py' *>> '$InstallDir\background_crash.log'`""
+$TriggerTask = New-ScheduledTaskTrigger -AtLogOn
+$PrincipalTask = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+$SettingsTask = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 
-Write-Host "⚙️  Configurando serviço invisível..." -ForegroundColor Cyan
-$TaskArgs = "`"$InstallDir\sync_engine.py`""
-
-schtasks /Create /F /TN $TaskName /TR "`"$PythonwExe`" $TaskArgs" /SC ONLOGON *>$null
+Register-ScheduledTask -TaskName $TaskName -Action $ActionTask -Trigger $TriggerTask -Principal $PrincipalTask -Settings $SettingsTask -Force *>$null
 
 Write-Host "🎉 Instalação Concluída com Sucesso!" -ForegroundColor Green
 Write-Host "`nFeche e abra um terminal novo para usar o comando 'sync-engine'."

@@ -56,7 +56,7 @@ You must manually download and install these tools before running the installer.
      ```bash
      sudo ./install.sh
      ```
-   * 🪟 **On Windows:** Open the cloned folder, right-click the `install.ps1` file, and select **"Run with PowerShell"**. *(A blue screen will ask for Administrator privileges; just confirm it).*
+   * 🪟 **On Windows:** Open the cloned folder on PowerShell, and run ```powershell -ExecutionPolicy Bypass -File .\install.ps1```
 
 3. **Configure your cloud accounts:**
    On either Windows or Linux, open a terminal and run (as a standard user, DO NOT use sudo/admin):
@@ -136,6 +136,6 @@ To turn your PC into a true "server":
 To completely remove Sync Engine from your system (clearing the root executable, shortcuts, and background services):
 
 *   **On Linux:** `sudo ./install.sh uninstall`
-*   **On Windows:** Run `.\install.ps1 uninstall` in your PowerShell terminal, or use the prompt provided by the script context.
+*   **On Windows:** Run `powershell -ExecutionPolicy Bypass -File .\install.ps1 uninstall` in your PowerShell terminal, or use the prompt provided by the script context.
 
 *(Your `config.json` rules and `.db` metadata will be kept in `~/.config/sync_engine/` for safety).*

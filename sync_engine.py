@@ -17,15 +17,12 @@ import ssl
 from logging.handlers import RotatingFileHandler
 
 # ==========================================
-# ÂNCORA DE DIRETÓRIO (ESSENCIAL PARA WINDOWS TASK SCHEDULER)
+# ÂNCORA DE DIRETÓRIO
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 sys.path.append(BASE_DIR)
 
-# ==========================================
-# IMPORTAÇÃO DINÂMICA DO SISTEMA OPERACIONAL
-# ==========================================
 SISTEMA = platform.system()
 if SISTEMA == "Linux":
     import os_linux as sys_tools
@@ -35,7 +32,7 @@ else:
     print(f"❌ Erro crítico: O sistema '{SISTEMA}' não é suportado.")
     sys.exit(1)
 
-VERSION = "5.5"
+VERSION = "5.6"
 UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
@@ -58,6 +55,7 @@ DEFAULT_CONFIG = {
     "BW_LIMIT": "0",
     "MAX_SIZE": "0",
     "REPORT_DIR": "",
+    "AUTO_CHECK_NAMES": True,
     "ACCOUNTS": []
 }
 
@@ -67,7 +65,9 @@ def load_config():
         return DEFAULT_CONFIG
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
+            if "AUTO_CHECK_NAMES" not in cfg: cfg["AUTO_CHECK_NAMES"] = True
+            return cfg
     except json.JSONDecodeError:
         return DEFAULT_CONFIG
 
@@ -180,6 +180,43 @@ def run_update():
     except Exception as e:
         print(f"\n❌ Erro durante o processo de atualização: {e}"); pause()
 
+# --- RADAR DE COLISÃO SILENCIOSO ---
+def check_name_issues_silent(alvo_expandido, ignore_patterns):
+    substituicoes = ["‛", "＂", "｜", "⧸", "：", "？", "＊", "★", "✬", "☆"]
+    for root, dirs, files in os.walk(alvo_expandido):
+        rel_root = os.path.relpath(root, alvo_expandido)
+        if rel_root == '.': rel_root = ""
+        rel_root_unix = rel_root.replace("\\", "/")
+
+        if '.nosync' in files: dirs.clear(); continue
+
+        dirs_to_keep = []
+        for d in dirs:
+            ignored = False
+            rel_path = os.path.join(rel_root_unix, d).replace("\\", "/") if rel_root_unix else d.replace("\\", "/")
+            for p in ignore_patterns:
+                p_unix = p.replace("\\", "/")
+                if p_unix.startswith('/') and fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
+                elif fnmatch.fnmatch(d, p_unix): ignored = True; break
+            if not ignored: dirs_to_keep.append(d)
+        dirs[:] = dirs_to_keep
+
+        vistos_nesta_pasta = set()
+        for nome in files:
+            rel_path = os.path.join(rel_root_unix, nome).replace("\\", "/") if rel_root_unix else nome.replace("\\", "/")
+            ignored = False
+            for p in ignore_patterns:
+                p_unix = p.replace("\\", "/")
+                if p_unix.startswith('/') and fnmatch.fnmatch(rel_path, p_unix[1:]): ignored = True; break
+                elif fnmatch.fnmatch(nome, p_unix): ignored = True; break
+            if ignored: continue
+
+            if any(char in nome for char in substituicoes): return True
+            nome_lower = nome.lower()
+            if nome_lower in vistos_nesta_pasta: return True
+            vistos_nesta_pasta.add(nome_lower)
+    return False
+
 def run_filename_cleaner():
     clear_screen()
     print("="*45)
@@ -240,7 +277,6 @@ def run_filename_cleaner():
                 elif fnmatch.fnmatch(nome, p_unix): ignored = True; break
             if ignored: continue
 
-            # Radar de Colisão Case-Sensitive (Linux vs Windows)
             nome_lower = nome.lower()
             if nome_lower in vistos_nesta_pasta:
                 colisoes_case.append((root, vistos_nesta_pasta[nome_lower], nome))
@@ -276,9 +312,7 @@ def run_filename_cleaner():
 
     renomeados = 0
     for caminho_antigo, caminho_novo, nome, novo_nome in arquivos_para_renomear:
-        try:
-            os.rename(caminho_antigo, caminho_novo)
-            renomeados += 1
+        try: os.rename(caminho_antigo, caminho_novo); renomeados += 1
         except Exception: pass
     print(f"\n🎉 Concluído! {renomeados} arquivos foram higienizados."); pause()
 
@@ -329,6 +363,16 @@ def run_analyze_errors():
         if resync_requests > 0: print(f"🔹 {resync_requests}x 'Varredura de Cura': O histórico quebrou, o motor já iniciou o reparo.")
     pause()
 
+def analyze_sync_logic(log_text):
+    # Removido "Applying changes" para evitar falsos positivos no Linux
+    mudancas = ["Copied (", "Deleted:", "Moved (", "Updated:"]
+    has_changes = any(m in log_text for m in mudancas)
+    if "resync is required" in log_text.lower() or "resyncing" in log_text.lower():
+        has_changes = True
+    errors = [line for line in log_text.split('\n') if "ERROR" in line]
+    err_msg = errors[0].split("ERROR :")[-1].strip() if errors else "Verifique o log detalhado."
+    return has_changes, err_msg
+
 def run_now():
     clear_screen()
     print("="*45 + "\n🚀 SINCRONIZAÇÃO IMEDIATA E REPARO (NOW)\n" + "="*45)
@@ -343,15 +387,25 @@ def run_now():
 
     for acc in ACCOUNTS:
         print(f"\n🔄 Conta atual: {acc['PROFILE_NAME']}")
-        print("  [1] Sincronização Normal (Segura)")
+        
+        local_dir = os.path.expanduser(acc["LOCAL_DIR"])
+        os.makedirs(local_dir, exist_ok=True)
+        
+        # O Radar Automático atua aqui no comando manual também!
+        if check_name_issues_silent(local_dir, acc.get("IGNORE_PATTERNS", [])):
+            print("\n🚨 ALERTA: Foram detectados conflitos de Case-Sensitivity ou Caracteres Inválidos nesta pasta!")
+            resp = input("Deseja continuar ignorando os riscos de perda de dados? (S/N) [N]: ").strip().lower()
+            if resp != 's':
+                print("Sincronização abortada para a conta atual. Execute o Menu 9 para corrigir.")
+                continue
+
+        print("\n  [1] Sincronização Normal (Segura)")
         print("  [2] ⚠️  FORÇAR Sincronização (--force)")
         print("  [3] Pular esta conta")
         
         escolha = input("\nAção (1-3) [Enter = Pular]: ").strip()
         if escolha == '' or escolha == '3': continue
             
-        local_dir = os.path.expanduser(acc["LOCAL_DIR"])
-        os.makedirs(local_dir, exist_ok=True)
         db_path, filter_file = os.path.join(CONFIG_DIR, acc["DB_FILE"]), os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
         
         db_connection = init_db(db_path)
@@ -443,18 +497,29 @@ def run_config_wizard():
         config = load_config()
         clear_screen()
         print(f"=== Assistente Sync Engine (v{VERSION}) ===\n" + "="*45)
-        print("--- Contas ---")
-        print("1. Adicionar conta  | 2. Listar  | 3. Remover")
-        print("4. Configurações Gerais (Intervalo, Banda, Tamanho)")
-        print("5. Gerenciar Filtros Globais")
+        print("\n--- Configuração de Contas ---")
+        print("1. Adicionar nova conta")
+        print("2. Listar contas atuais")
+        print("3. Remover uma conta")
+        
+        print("\n--- Configurações Globais ---")
+        print("4. Editar Intervalo, Limites e Pastas")
+        print("5. Gerenciar Filtros de Exclusão")
+        
         print("\n--- Ações Extras ---")
         print("6. 🚀 Forçar Sincronização Agora")
-        print("7. 🧪 Test-Drive / Dry-Run")
-        print("8. 📊 Relatório de Tamanho  | 9. 🧹 Higienizador / Colisão")
-        print("10. 🔎 Analisar Erros       | 11. 🩺 Doctor")
-        print("\n--- Motor de Fundo ---")
-        print("12. ▶️ Ligar  | 13. ⏹️ Desligar | 14. ℹ️ Status")
-        print("15. 🔄 Atualizar")
+        print("7. 🧪 Test-Drive / Simulação (Dry-Run)")
+        print("8. 📊 Relatório de Arquivos Maiores que o Limite")
+        print("9. 🧹 Higienizador e Verificador de Colisão")
+        print("10. 🔎 Analisador de Erros de Sincronização")
+        print("11. 🩺 Diagnóstico do Sistema (Doctor)")
+        
+        print("\n--- Motor de Segundo Plano ---")
+        print("12. ▶️ Ligar Serviço Invisível")
+        print("13. ⏹️ Desligar Serviço Invisível")
+        print("14. ℹ️ Checar Status e Logs do Motor")
+        print("15. 🔄 Atualizar Versão do Aplicativo")
+        
         print("\n[Enter] Sair\n" + "="*45)
         
         escolha = input("Opção: ").strip()
@@ -496,15 +561,20 @@ def run_config_wizard():
                 
         elif escolha == '4':
             while True:
-                clear_screen(); print("--- Globais ---")
-                print(f"1. Intervalo ({config.get('SYNC_INTERVAL', 300)}s) | 2. Banda ({config.get('BW_LIMIT', '0')})")
-                print(f"3. Max Size ({config.get('MAX_SIZE', '0')})    | 4. Pasta Relatórios")
+                clear_screen(); print("--- Configurações Globais ---")
+                print(f"1. Intervalo ({config.get('SYNC_INTERVAL', 300)}s)")
+                print(f"2. Banda ({config.get('BW_LIMIT', '0')})")
+                print(f"3. Max Size ({config.get('MAX_SIZE', '0')})")
+                print(f"4. Pasta Relatórios")
+                print(f"5. Bloqueio Auto em Colisões de Nomes (Atual: {config.get('AUTO_CHECK_NAMES', True)})")
+                
                 op_cfg = input("\nOpção [Enter p/ voltar]: ").strip()
                 if not op_cfg: break
                 elif op_cfg == '1': config["SYNC_INTERVAL"] = int(input("Segundos: ") or 300)
                 elif op_cfg == '2': config["BW_LIMIT"] = input("Limite (ex: 10M, 0): ").strip()
                 elif op_cfg == '3': config["MAX_SIZE"] = input("Max (ex: 1G, 0): ").strip()
                 elif op_cfg == '4': config["REPORT_DIR"] = input("Caminho: ").strip()
+                elif op_cfg == '5': config["AUTO_CHECK_NAMES"] = not config.get('AUTO_CHECK_NAMES', True)
                 save_config(config); sys_tools.manage_service("reload", LOG_FILE)
 
         elif escolha == '5':
@@ -517,9 +587,9 @@ def run_config_wizard():
                 while True:
                     clear_screen(); print(f"--- Filtros: {conta['PROFILE_NAME']} ---")
                     for j, p in enumerate(padroes): print(f"  [{j+1}] {p}")
-                    print("\n[A] Adicionar  [R] Remover  [S] Salvar e Sair  [C] Cancelar Alterações")
+                    print("\n[A] Adicionar  [R] Remover  [S] Salvar e Sair  [Enter] Cancelar Alterações")
                     acao = input("Ação: ").strip().lower()
-                    if acao == 'c' or acao == '': break
+                    if acao == '' or acao == 'c': break
                     elif acao == 's': conta["IGNORE_PATTERNS"] = padroes; save_config(config); sys_tools.manage_service("reload", LOG_FILE); break
                     elif acao == 'a': novo = input("Padrão: ").strip(); padroes.append(novo) if novo else None
                     elif acao == 'r': 
@@ -578,7 +648,6 @@ def scan_remote(conn, remote_name, ignore_patterns):
     records = []
     cmd = ["rclone", "lsjson", f"{remote_name}:", "--fast-list", "--recursive"]
     try:
-        # Importante: Redirecionamento DEVNULL aqui blinda o comando no Windows
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if result.stdout.strip():
             for item in json.loads(result.stdout):
@@ -609,7 +678,6 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir
     
     cmd = ["rclone", "bisync", local_dir, f"{remote_name}:", f"--filter-from={filter_file}", "--create-empty-src-dirs", "--fix-case", "-v", f"--log-file={log_file}"]
     
-    # BURACO NEGRO DO WINDOWS: O redirecionamento explícito abaixo impede que o pythonw sofra um erro fatal de Handle Inválido
     result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     with open(log_file, "r", encoding="utf-8") as f: log_text = f.read()
@@ -621,7 +689,7 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir
             result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             with open(log_file, "r", encoding="utf-8") as f: log_text = f.read()
 
-    has_transfers = any(m in log_text for m in ["Copied (", "Deleted:", "Moved (", "Updated:", "Applying changes"])
+    has_transfers, err_msg = analyze_sync_logic(log_text)
     
     if result.returncode == 0:
         clean_log_file(log_file)
@@ -630,7 +698,7 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir
         cmd.append("--resync")
         resync_result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with open(log_file, "r", encoding="utf-8") as f: resync_log = f.read()
-        has_resync = any(m in resync_log for m in ["Copied (", "Deleted:", "Moved (", "Updated:"])
+        has_resync, _ = analyze_sync_logic(resync_log)
         clean_log_file(log_file)
         return resync_result.returncode == 0, has_resync, ""
     else:
@@ -655,7 +723,7 @@ if __name__ == "__main__":
         elif comando == "stop": sys_tools.manage_service("stop", LOG_FILE)
         elif comando == "status": sys_tools.manage_service("status", LOG_FILE)
         elif comando == "reload": sys_tools.manage_service("reload", LOG_FILE)
-        else: run_config_wizard() # Qualquer comando não reconhecido abre o menu por padrão
+        else: run_config_wizard() 
         sys.exit(0)
     else:
         is_terminal = False
@@ -675,6 +743,13 @@ if __name__ == "__main__":
                 profile = acc.get("PROFILE_NAME", "Local")
                 local_dir = os.path.expanduser(acc["LOCAL_DIR"])
                 os.makedirs(local_dir, exist_ok=True)
+                
+                # Radar Automático Antes de Sincronizar (Gatilho Silencioso)
+                if config.get("AUTO_CHECK_NAMES", True):
+                    if check_name_issues_silent(local_dir, acc.get("IGNORE_PATTERNS", [])):
+                        logger.error(f"[{profile}] Sincronização bloqueada: Colisão de nomes ou caracteres detectados.")
+                        sys_tools.send_notification("Conflito de Nomes", f"A sincronização de '{profile}' foi pausada. Use a Opção 9 para corrigir.", "critical")
+                        continue # Pula a sincronização para salvar a nuvem de danos
                 
                 db_path, filter_file = os.path.join(CONFIG_DIR, acc["DB_FILE"]), os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
                 db_conn = init_db(db_path)
