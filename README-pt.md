@@ -2,150 +2,136 @@
   <a href="README.md">🇺🇸 English</a> | <span>🇧🇷 Português</span>
 </div>
 
-# 🔄 Sync Engine - Multi-Account Rclone Manager
+# 🔄 Sync Engine - Gerenciador Multi-Contas para Rclone (v7.0)
 
-Um motor inteligente, interativo e seguro para sincronização bidirecional em nuvem, construído sobre o poderoso `rclone bisync`. Projetado exclusivamente para Linux e Windows, ele transforma a complexidade do Rclone em uma experiência fluida através de um assistente de terminal (CLI) completo.
+Um motor de sincronização em nuvem bidirecional inteligente, interativo e seguro, construído sobre o poderoso `rclone bisync`. Projetado para Linux e Windows, ele transforma a complexidade do Rclone em uma experiência fluida através de um assistente CLI completo.
 
-Nascido da necessidade de superar as limitações de clientes tradicionais, este projeto traz foco total em sincronização automática de fundo, proteção nativa contra exclusões acidentais, controle rígido de banda/tamanho e bloqueio cirúrgico de pastas de forma bidirecional.
+Nascido da necessidade de superar as limitações dos clientes de nuvem tradicionais, este projeto tem foco pesado em sincronização automática em segundo plano, proteção nativa contra exclusões acidentais, limites rígidos de banda/tamanho e bloqueio cirúrgico de pastas.
 
-## ✨ Principais Recursos
+## ✨ Principais Funcionalidades (Atualizado v7.0)
 
-*   **Bloqueio Inteligente Bidirecional (`.nosync`):** Crie um arquivo vazio chamado `.nosync` dentro de qualquer pasta (seja no seu computador **ou direto na nuvem**) para que o motor a ignore instantaneamente. A leitura remota garante que diretórios indesejados na nuvem nunca sejam baixados acidentalmente, sem a necessidade de editar arquivos de configuração globais.
-*   **Assistente CLI Interativo:** Um menu completo para gerenciar contas, filtros, serviços e gerar relatórios.
-*   **Higienizador Nativo (`clean`):** Varre suas pastas locais em busca de caracteres especiais que causam erros de upload na nuvem. Exibe uma pré-visualização, respeita rigorosamente suas regras de filtro e `.nosync`, exige confirmação do usuário e gera um relatório detalhado de alterações.
-*   **Analisador de Erros (`analyze`):** Esqueça logs confusos. O motor lê os relatórios de falha do Rclone e traduz problemas comuns (como *eTag Mismatch* ou *Lock Files* emperrados) em diagnósticos e soluções fáceis de aplicar.
-*   **Auto-Atualizador (`update`):** Verifica, baixa e instala novas versões do script diretamente do repositório no GitHub com um único comando.
-*   **Suporte Multi-Contas:** Conecte simultaneamente Google Drive, OneDrive, Dropbox, S3, ou qualquer outro provedor suportado pelo Rclone.
-*   **Filtros Avançados:** Defina exclusões globais utilizando curingas, limite de tamanho de arquivo (`MAX_SIZE`) e limite de uso de banda (`BW_LIMIT`).
-*   **Serviço em Segundo Plano (Systemd / Task Scheduler):** Roda invisível no seu nível de usuário, com suporte a inicialização automática desde o boot (sem necessidade de privilégios de administrador para a sincronização diária).
-*   **Relatórios Exportáveis:** Gere relatórios seguros de simulação (Dry-Run), histórico de sincronizações manuais e listagens de arquivos bloqueados por tamanho, salvos em texto puro na pasta de sua escolha.
-*   **Notificações no Desktop:** Avisos nativos sobre sucesso ou erros na sincronização (suportado no Linux via `notify-send` e no Windows via balões de notificação do PowerShell).
-*   **Auto-Cura e Auto-Unlocker:** O script detecta falhas críticas da API e travas residuais (lock files), realizando a quebra do cadeado e a varredura de cura automaticamente.
+*   **Configuração Granular por Conta:** Regras de exclusão e limites máximos de tamanho de arquivo (`MAX_SIZE`) agora são definidos individualmente para cada nuvem conectada, oferecendo flexibilidade total entre provedores gratuitos e servidores dedicados.
+*   **Analisador de Erros e Assistente de Reconexão (`analyze`):** Esqueça logs confusos. O motor traduz falhas do Rclone em diagnósticos legíveis. A versão 7.0 agora detecta automaticamente tokens de segurança expirados (Microsoft OneDrive/Google Drive) e aciona o navegador para renovação imediata com um clique.
+*   **Bloqueio Bidirecional Inteligente (`.nosync`):** Crie um arquivo vazio chamado `.nosync` dentro de qualquer pasta (seja no seu computador ou diretamente na nuvem) e o motor irá ignorá-la instantaneamente.
+*   **Relatórios Isolados e Padronizados:** Todos os logs de histórico (Automático, Manual, Dry-Run, Higienizador e Tamanho) são gerados com carimbos de data/hora (timestamps) no cabeçalho e isolados por conta na pasta de sua escolha.
+*   **Relatório de Tamanho Duplo:** A auditoria de arquivos grandes varre simultaneamente o seu disco local e a nuvem remota, exibindo resultados formatados de forma legível para humanos (MB e GB).
+*   **Higienizador de Nomes Nativo (`clean`):** Varre suas pastas locais em busca de caracteres especiais que causam erros de upload, mostra uma prévia segura das alterações e gera um relatório detalhado preservando os filtros ativos.
+*   **Auto-Healing e Quebra de Cadeado (Lock Files):** O script detecta falhas críticas de API e arquivos de trava presos, quebrando os cadeados automaticamente e executando varreduras profundas de cura (`--resync`).
+*   **Auto-Desinstalação Segura:** Esqueça scripts externos. O próprio motor agora possui uma rotina de auto-destruição limpa (Opção 16) protegida por um desafio de texto (CAPTCHA), garantindo que nada seja removido por acidente.
+*   **Serviço de Segundo Plano (Systemd / Task Scheduler):** Roda silenciosamente a nível de usuário, permitindo inicialização automática sem exigir privilégios administrativos para tarefas diárias.
 
 ---
 
 ## ⚙️ Pré-requisitos e Instalação
 
-O projeto é multiplataforma, rodando nativamente como serviço de fundo tanto em ecossistemas **Linux** quanto **Windows 10/11**.
+O projeto é multiplataforma, rodando nativamente como um serviço de background tanto no **Linux** quanto no ecossistema **Windows 10/11**.
 
 ### Dependências
 As ferramentas base exigidas pelo motor são:
-*   `python3` (A linguagem base do sistema)
-*   `rclone` (O motor central de transferência)
+*   `python3` (O motor de execução)
+*   `rclone` (O motor de transferência)
 *   `sqlite3` (Para indexação rápida de metadados)
 
 **🐧 No Linux:**
-Não se preocupe, todas as dependências são baixadas e configuradas automaticamente pelo nosso script `install.sh`.
+Todos os pacotes e dependências são baixados e configurados automaticamente pelo script `install-linux.sh`.
 
 **🪟 No Windows:**
-Você precisa baixar e instalar estas ferramentas manualmente antes de rodar o instalador. Certifique-se de marcar a opção **"Add to PATH"** (Adicionar à variável de ambiente) durante as instalações:
-1.  **Python 3:** [Baixar Instalador do Windows](https://www.python.org/downloads/windows/)
-2.  **Rclone:** [Baixar Rclone](https://rclone.org/downloads/) *(Extraia o `.exe` e coloque-o em uma pasta no seu PATH, ex: `C:\Windows`)*
-3.  **SQLite3:** [Baixar SQLite Tools](https://www.sqlite.org/download.html) *(Extraia o `.exe` e coloque-o em uma pasta no seu PATH)*
+Você deve baixar e instalar estas ferramentas manualmente antes de rodar o instalador. Certifique-se de marcar a opção **"Add to PATH"** durante a instalação:
+*   **Python 3:** [Baixar Instalador Windows](https://www.python.org/downloads/windows/)
+*   **Rclone:** [Baixar Rclone](https://rclone.org/downloads/) *(Extraia o `.exe` e coloque em uma pasta no seu PATH, ex: `C:\Windows`)*
+*   **SQLite3:** [Baixar SQLite Tools](https://www.sqlite.org/download.html) *(Extraia o `.exe` e coloque no seu PATH)*
 
-### Instalação Passo a Passo
+### Instalação Passo-a-Passo
 
-1. **Clone este repositório no seu computador:**
+1. **Clone este repositório para o seu computador:**
    ```bash
    git clone [https://github.com/ocanha-almeida/sync-engine.git](https://github.com/ocanha-almeida/sync-engine.git)
    cd sync-engine
    ```
 
-2. **Execute o instalador de acordo com o seu sistema:**
-   * 🐧 **No Linux:** Abra o terminal e execute:
-     ```bash
-     sudo ./install.sh
-     ```
-   * 🪟 **No Windows:** Abra o PowerShell, navegue até a pasta clonada, e execute:
-   ```powershell -ExecutionPolicy Bypass -File .\install.ps1```
+2. **Execute o instalador correto para o seu Sistema Operacional:**
+   * 🐧 **No Linux:** Dê um duplo-clique no arquivo `install-linux.sh` e escolha "Executar no Terminal", ou rode `bash ./install-linux.sh` no terminal.
+   * 🪟 **No Windows:** Apenas dê um duplo-clique no arquivo `install-windows.cmd` localizado dentro da pasta clonada.
 
-3. **Configure as suas contas de nuvem:**
-   Tanto no Windows quanto no Linux, abra um terminal e digite (com o seu usuário comum, NÃO use sudo/admin):
+3. **Configure suas contas de nuvem:**
+   Abra um terminal qualquer e execute (como usuário padrão, NÃO use sudo/admin):
    ```bash
    rclone config
    ```
-   *(Siga as instruções do Rclone para criar suas conexões na nuvem).*
+   *(Siga as instruções do Rclone para vincular seus provedores).*
 
 ---
 
 ## 💻 Referência de Comandos (CLI)
 
-O Sync Engine pode ser operado via interface interativa ou através de atalhos diretos no terminal.
-
-Uso básico: `sync-engine [COMANDO]`
+O Sync Engine pode ser operado pelo assistente interativo ou por atalhos diretos no terminal. Uso básico: `sync-engine [COMANDO]`
 
 | Comando | Descrição |
 | :--- | :--- |
-| `config` | Abre o Assistente Interativo (Menu principal). |
-| `now` | 🚀 Sincroniza AGORA. Exibe barra de progresso e força o envio/download imediato. |
-| `test` | 🧪 Inicia o modo de simulação (Dry-Run). Não altera nenhum arquivo. |
-| `clean` | 🧹 Inicia o higienizador de nomes de arquivos (Gera relatório e respeita filtros). |
-| `analyze` | 🔎 Analisa o log da última sincronização manual para dar diagnósticos de erros. |
-| `doctor` | 🩺 Executa um diagnóstico de sistema verificando dependências e permissões. |
-| `update` | 🔄 Baixa e instala a última versão disponível no GitHub. |
-| `start` / `stop`| LIGA ou DESLIGA o serviço invisível em segundo plano. |
-| `status` | Exibe o status atual do serviço e os últimos logs gerados. |
-| `version` (`-v`)| Exibe a versão atual do motor. |
+| `config` | Abre o Assistente Interativo (Menu Principal). |
+| `now` | 🚀 Força uma Sincronização Imediata (Exibe barras de progresso). |
+| `test` | 🧪 Inicia o modo Dry-Run interativo por conta (Simulação segura). |
+| `clean` | 🧹 Inicia o higienizador de nomes (Gera relatório e respeita filtros). |
+| `analyze` | 🔎 Analisa os relatórios automáticos/manuais recentes e oferece soluções. |
+| `doctor` | 🩺 Checa a saúde do sistema (Dependências e permissões). |
+| `update` | 🔄 Baixa e instala a versão mais recente do GitHub. |
+| `start` / `stop` / `reload`| LIGA, DESLIGA ou RECARREGA o serviço invisível de background. |
+| `status` | Exibe o status atual do serviço e captura os logs recentes na memória. |
+
+*(Dica: Enviar um comando inválido agora exibe automaticamente o menu de Ajuda e encerra a operação com segurança).*
 
 ---
 
 ## 🛠️ Guia do Assistente Interativo (`sync-engine config`)
 
-O menu interativo divide-se em 4 blocos principais:
+O menu interativo foi expandido para suportar o gerenciamento granular da versão 7.0:
 
-1. **Configuração de Contas (Opções 1 a 3):** Adicione, liste ou remova vínculos de pastas locais com suas nuvens. Ao remover uma conta, o script faz a limpeza inteligente de lixo (bancos de dados e filtros residuais).
-2. **Configurações Globais (Opções 4 e 5):** Altere o intervalo de sincronização (ex: `300s`), limite de banda (ex: `10M`), corte de arquivos gigantes (ex: `2G`) e defina a pasta de destino dos relatórios (ex: `/tmp` ou `~/Relatorios`).
-3. **Ações Extras (Opções 6 a 11):** Atalhos para execução imediata (`now`), simulação (`test`), diagnóstico (`doctor`), analisador de erros (`analyze`) e o **Relatório de Tamanho**, que lista arquivos barrados pela regra de limite de tamanho de forma legível.
-4. **Controle do Motor (Opções 12 a 15):** Interface amigável para ligar, desligar, ver o status do motor ou rodar o instalador de atualizações.
+1. **Configuração de Contas (Opções 1 a 3):** Adicione, liste ou remova vínculos de pastas locais com suas nuvens. Remover uma conta aciona uma coleta de lixo inteligente.
+2. **Configurações Globais (Opção 4):** Altere intervalos de sincronização, limites globais de banda (`BW_LIMIT`), defina o diretório absoluto para salvar relatórios, e controle o bloqueio automático contra colisões de case-sensitivity.
+3. **Filtros e Limites por Conta (Opção 5):** Escolha uma conta específica para atribuir limites de tamanho customizados e manipular a lista de exclusões (arquivos/pastas ignorados).
+4. **Ações Extras e Relatórios (Opções 6 a 11):** Atalhos rápidos para sincronização (`now`), simulação (`test`), relatório de arquivos grandes locais/remotos, higienizador, analisador de erros e doutor do sistema.
+5. **Controle do Motor (Opções 12 a 16):** Interface amigável para ligar, desligar, checar status, atualizar ou acionar a **Auto-Desinstalação** do sistema completo.
 
 ---
 
 ## 🎯 Guia de Filtros e Exclusões
 
-Para evitar a sincronização de pastas ou arquivos indesejados, você pode usar dois métodos:
+Para evitar a sincronização de pastas ou arquivos indesejados, utilize as seguintes sintaxes ao adicionar um filtro na **Opção 5**:
 
-### Método 1: A Flag `.nosync` (Recomendado)
-Basta criar um arquivo vazio com o nome exato `.nosync` dentro de qualquer diretório, seja no seu computador ou na interface web da sua nuvem. 
-No próximo ciclo do motor, essa pasta e todo o seu conteúdo serão ignorados instantaneamente e bloqueados no Rclone de forma segura.
-
-### Método 2: Filtros Globais (Menu 5 - Gerenciar Filtros)
-Aplica regras gerais para todas as pastas da sua conta. Suporta as seguintes sintaxes avançadas:
-*   **Nome exato:** `venv` ou `.git` (Bloqueia qualquer pasta/arquivo com esse nome, em qualquer nível).
-*   **Curinga de Texto (`*`):** `*.tmp` (Bloqueia todos os arquivos que terminem com `.tmp`).
-*   **Curinga de Caractere (`?`):** `cam_?.dav` (Bloqueia `cam_1.dav`, `cam_A.dav`, etc).
-*   **Ancoragem na Raiz (`/`):** `/Backups` (Bloqueia a pasta "Backups", mas *apenas* se ela estiver na raiz da sua nuvem/pasta principal).
+*   **Ignorar Case (Sensibilidade a Maiúsculas):** `(?i)*.tmp` *(Ignora tanto `log.tmp` quanto `LOG.TMP` em qualquer sistema operacional).*
+*   **Correspondência Exata:** `venv` ou `.git`
+*   **Início do Nome de Arquivo:** `Prefixo*` *(Ex: `Backup*` bloqueia qualquer arquivo/pasta que comece com essa palavra).*
+*   **Curinga de Texto (`*`):** `*.bak`
+*   **Âncora de Raiz (`/`):** `/Backups` *(Bloqueia a pasta "Backups", mas *apenas* se ela estiver exatamente na raiz do seu diretório de sincronização).*
+*   **Arquivos Ocultos na Raiz (Linux):** `/.*` *(Bloqueia pastas/arquivos ocultos como `.bashrc` ou `.config`, mas *apenas* se estiverem localizados no nível raiz).*
+*   **Bloqueador Universal:** Apenas crie um arquivo vazio chamado `.nosync` dentro de qualquer pasta que deseje bloquear permanentemente.
 
 ---
 
 ## 💡 Servidor Contínuo Automático (Linger / Logon)
 
-Para transformar seu PC num verdadeiro "servidor":
-*   **No Linux:** O script de instalação ativa automaticamente o recurso Linger (`loginctl enable-linger`). Isso permite que o motor inicie imediatamente após o *boot* do sistema, mesmo que a máquina fique parada na tela de bloqueio de senha. *(Nota: O Linger não é desativado na desinstalação, pois é uma permissão valiosa para o usuário).*
-*   **No Windows:** A tarefa é criada no Agendador de Tarefas vinculada ao gatilho de *Logon* do usuário, garantindo que rode invisível assim que a área de trabalho for carregada.
-
----
-
-## 💡 Dicas de Uso e Fluxos de Trabalho
-
-*   **Pastas de Relatórios Efêmeras:** No menu de Configurações Globais, você pode mudar a pasta de relatórios gerados para `/tmp` (no Linux). O sistema operacional apagará seus relatórios antigos magicamente a cada reinício da máquina.
-*   **Múltiplas Nuvens:** Crie uma conta no menu apontando para o Google Drive (`~/GDrive`) e outra para o OneDrive (`~/OneDrive`). O motor cuidará de ambas paralelamente com regras e bancos de dados independentes.
+Para transformar o seu PC em um verdadeiro "servidor":
+*   **No Linux:** O script de instalação habilita automaticamente o recurso Linger (`loginctl enable-linger`). Isso permite que o motor de sincronização inicie imediatamente após o boot do sistema, mesmo que a máquina pare na tela de bloqueio de usuário.
+*   **No Windows:** Uma tarefa invisível é criada no Agendador de Tarefas vinculada ao gatilho de *Logon* do usuário, garantindo inicialização limpa e silenciosa assim que a área de trabalho for carregada.
 
 ---
 
 ## ⚠️ Limitações Conhecidas
 
-1. **Não é em Tempo Real (Inotify):** O script não monitora ativamente cada alteração (clique) no disco. Ele opera em janelas de varredura cíclicas (padrão: a cada 5 minutos). 
-2. **Ignora Links Simbólicos (Symlinks):** Para evitar loops infinitos acidentais, o motor não copia nem segue atalhos do sistema.
-3. **Tempo de Resync Inicial:** Na primeira sincronização de uma conta (ou se o histórico quebrar), o motor precisará rodar uma varredura profunda (`--resync`). Isso é feito de forma automática.
-4. **Cofres Pessoais (Vaults):** Algumas nuvens exigem chaves de decriptação nativas (ex: *Personal Vault* do OneDrive). O Sync Engine as bloqueia por padrão via filtros para impedir falhas de permissão de leitura.
+1. **Não é Tempo Real (Inotify):** O script não monitora cliques no disco ativamente. Ele opera em janelas cíclicas de varredura (padrão: a cada 5 minutos).
+2. **Ignora Symlinks:** Para prevenir loops infinitos, o motor não copia e nem segue atalhos de sistema.
+3. **Tempo de Resync Inicial:** Na primeiríssima execução de uma conta, o motor rodará uma varredura profunda (`--resync`), o que pode demorar alguns minutos. Nas próximas vezes será quase instantâneo.
+4. **Cofres Pessoais:** O motor bloqueia acesso ao *Personal Vault* do OneDrive por padrão para evitar falhas de permissão de leitura de API.
 
 ---
 
 ## 🗑️ Desinstalação
 
-Para remover completamente o Sync Engine do seu sistema (limpando o executável raiz, atalhos e os serviços de fundo):
+O método via script instalador externo (`.cmd` e `.sh`) foi descontinuado na versão 7.0 para evitar problemas de incompatibilidade de versão (*version mismatch*).
 
-*   **No Linux:** `sudo ./install.sh uninstall`
-*   **No Windows:** Clique com o botão direito no `install.ps1` e escolha "Executar com o PowerShell", digitando `uninstall` quando o script oferecer suporte ou rodando via terminal: `powershell -ExecutionPolicy Bypass -File .\install.ps1 uninstall`
-
-*(As suas regras `config.json` e metadados `.db` serão mantidos em `~/.config/sync_engine/` por segurança).*
+Para remover completamente o Sync Engine (limpando o executável raiz, atalhos do sistema e desligando os serviços de background invisíveis):
+1. Abra o terminal e digite `sync-engine config`
+2. Selecione a **Opção 16 (Desinstalar o Sync Engine)**
+3. O sistema solicitará um código aleatório em texto (CAPTCHA) para confirmar a exclusão.
+4. Você poderá escolher se deseja manter ou apagar definitivamente seu histórico de configurações e relatórios antigos da pasta `.config`.
+5. O programa se autodestruirá com segurança em 3 segundos.

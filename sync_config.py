@@ -1,9 +1,10 @@
 import os
 import json
 import logging
+import re
 from logging.handlers import RotatingFileHandler
 
-VERSION = "6.0"
+VERSION = "7.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.expanduser("~/.config/sync_engine")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -59,3 +60,33 @@ def get_report_dir(config):
         except OSError:
             return CONFIG_DIR
     return CONFIG_DIR
+
+def clean_log_text(text):
+    cleaned = []
+    skip = False
+    for line in text.split('\n'):
+        if "Bisyncing with Comparison Settings" in line or "Lockfile info" in line:
+            skip = True; continue
+        if skip and line.strip() == "}":
+            skip = False; continue
+        if skip: continue
+        if "Setting --ignore-listing-checksum" in line: continue
+        if "Valid lock file found" in line: continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+def clean_log_file(file_path):
+    try:
+        if not os.path.exists(file_path): return
+        with open(file_path, "r", encoding="utf-8") as f: text = f.read()
+        text = re.sub(r'Bisyncing with Comparison Settings:\s*\{.*?\}', '', text, flags=re.DOTALL)
+        text = re.sub(r'Lockfile info:\s*\{.*?\}', '', text, flags=re.DOTALL)
+        cleaned = []
+        for line in text.split('\n'):
+            if "Setting --ignore-listing-checksum" in line: continue
+            if "Valid lock file found" in line: continue
+            if line.strip() == "" and not cleaned: continue
+            cleaned.append(line)
+        final_text = re.sub(r'\n{3,}', '\n\n', "\n".join(cleaned))
+        with open(file_path, "w", encoding="utf-8") as f: f.write(final_text)
+    except Exception: pass

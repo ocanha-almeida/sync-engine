@@ -1,0 +1,3 @@
+@echo off
+echo 🚀 Iniciando instalacao do Sync Engine...
+PowerShell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_core_install.ps1"

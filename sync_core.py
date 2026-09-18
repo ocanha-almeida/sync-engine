@@ -44,14 +44,20 @@ def scan_local(conn, local_dir, ignore_patterns):
     conn.commit()
 
 def scan_remote(conn, remote_name, ignore_patterns):
+    cflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000) if os.name == 'nt' else 0
     records = []
     cmd = ["rclone", "lsjson", f"{remote_name}:", "--fast-list", "--recursive"]
     
-    # Fim do erro silencioso! Se o rclone falhar aqui, ele levanta exceção e bloqueia o download em massa.
-    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    for p in ignore_patterns:
+        p_clean = p.replace("\\", "/")
+        cmd.extend(["--exclude", f"{p_clean}/**", "--exclude", p_clean])
+    
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=cflags)
+    
     if result.returncode != 0:
-        logger.error(f"Falha ao ler a nuvem ({remote_name}). Abortando escaneamento remoto para proteger contra downloads indevidos.")
-        raise RuntimeError("Falha de comunicação com a Nuvem.")
+        erro_real = result.stderr.strip()
+        logger.error(f"Falha ao ler a nuvem ({remote_name}): {erro_real}")
+        raise RuntimeError(f"Detalhes do Rclone:\n{erro_real}")
 
     if result.stdout.strip():
         for item in json.loads(result.stdout):
