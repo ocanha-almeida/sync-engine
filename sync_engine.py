@@ -536,6 +536,7 @@ def run_now():
     pause()
 
 def run_update():
+    import time
     clear_screen()
     print("="*45 + "\n🔄 VERIFICADOR DE ATUALIZAÇÕES\n" + "="*45)
     print(f"Versão local:  {VERSION}")
@@ -543,10 +544,16 @@ def run_update():
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     try:
-        req = urllib.request.Request(UPDATE_URL_RAW, headers={'Cache-Control': 'no-cache'})
+        # Drible do Cache do GitHub: Adiciona um timestamp na URL para forçar o download da versão mais recente
+        cache_buster = int(time.time())
+        url_no_cache = f"{UPDATE_URL_RAW}?t={cache_buster}"
+        
+        req = urllib.request.Request(url_no_cache, headers={'Cache-Control': 'no-cache'})
         with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
             content = response.read().decode('utf-8')
-            match = re.search(r'^VERSION\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+            
+            # Regex blindado: aceita espaços antes/depois, aspas simples/duplas e ignora case
+            match = re.search(r'(?im)^[ \t]*VERSION\s*=\s*["\']([^"\']+)["\']', content)
             remote_version = match.group(1) if match else None
     except Exception as e:
         print(f"❌ Erro de rede: {e}"); pause(); return
