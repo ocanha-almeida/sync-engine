@@ -26,7 +26,7 @@ from sync_config import load_config, save_config, get_report_dir, VERSION, CONFI
 from sync_os import manage_service, send_notification, run_doctor_os, SISTEMA
 from sync_core import init_db, scan_local, scan_remote, generate_filters, analyze_sync_logic
 
-UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_engine.py"
+UPDATE_URL_RAW = "https://raw.githubusercontent.com/ocanha-almeida/sync-engine/main/sync_config.py"
 UPDATE_URL_ZIP = "https://github.com/ocanha-almeida/sync-engine/archive/refs/heads/main.zip"
 
 def clear_screen():
@@ -672,6 +672,8 @@ rm -rf "{BASE_DIR}"
             sh_content += f'\nrm -rf "{CONFIG_DIR}"'
             
         sh_content += f'\nrm -f "$HOME/.local/bin/sync-engine"'
+        sh_content += f'\nrm -f "$HOME/.config/systemd/user/sync-engine.service"'
+        sh_content += f'\nsystemctl --user daemon-reload'
         sh_content += '\nrm -- "$0"'
         
         with open(sh_path, "w", encoding="utf-8") as f:
