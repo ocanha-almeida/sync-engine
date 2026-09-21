@@ -10,15 +10,16 @@ Born from the need to overcome the limitations of traditional cloud clients, thi
 
 ## ✨ Key Features (Updated v7.0)
 
-*   **Granular Account Configuration:** Exclusion rules and maximum file size limits (`MAX_SIZE`) are now defined individually for each connected cloud, offering total flexibility between free providers and dedicated servers.
-*   **Error Analyzer & Auto-Reconnect (`analyze`):** Forget confusing logs. The engine translates Rclone failures into readable diagnostics. Version 7.0 automatically detects expired security tokens (Microsoft OneDrive/Google Drive) and triggers your browser for instant 1-click renewal.
-*   **Smart Bidirectional Blocking (`.nosync`):** Create an empty file named `.nosync` inside any folder (whether on your local machine or directly in the cloud) and the engine will instantly ignore it.
-*   **Isolated & Standardized Reports:** All history logs (Auto, Manual, Dry-Run, Cleaner, and Size) are generated with timestamps in the header and isolated by account in your chosen folder.
-*   **Dual Size Report:** The large file audit now scans both your local drive and the remote cloud simultaneously, displaying results formatted in human-readable sizes (MB and GB).
-*   **Native Filename Cleaner (`clean`):** Scans your local folders for special characters that cause cloud upload errors, shows a safe preview, and generates a detailed report while strictly respecting active filters.
+*   **Cloud-to-Cloud Migration:** Transfer files directly between distinct providers (e.g., OneDrive to Google Drive) using your system's RAM, preserving local disk space and intelligently ignoring blocked folders (`.nosync`).
+*   **Virtual Drive Mount:** Turn any cloud into a "virtual flash drive" seamlessly integrated into your OS (Native Systemd support on Linux and Network Drive on Windows).
+*   **Granular Account Configuration:** Exclusion rules and maximum file size limits (`MAX_SIZE`) are now defined individually for each connected cloud.
+*   **Error Analyzer & Auto-Reconnect (`analyze`):** Forget confusing logs. The engine translates Rclone failures into readable diagnostics. Version 7.0 automatically detects expired security tokens and triggers your browser for instant 1-click renewal.
+*   **Smart Bidirectional Blocking (`.nosync`):** Create an empty file named `.nosync` inside any folder (locally or directly in the cloud) and the engine will instantly ignore it.
+*   **Isolated & Standardized Reports:** All history logs are generated with timestamps in the header and isolated by account in your chosen folder.
+*   **Native Filename Cleaner (`clean`):** Scans your local folders for special characters that cause cloud upload errors, shows a safe preview, and generates a detailed report.
 *   **Auto-Healing & Auto-Unlocker:** The script detects critical API failures and stuck lock files, automatically breaking the locks and performing deep resyncs (`--resync`) to recover.
-*   **Safe Auto-Uninstall:** Forget external scripts. The engine now has a clean self-destruct routine (Option 16) protected by a text challenge (CAPTCHA), ensuring nothing is accidentally removed.
-*   **Background Service (Systemd / Task Scheduler):** Runs silently at the user level, allowing auto-start without requiring administrative privileges for daily tasks.
+*   **Safe Auto-Uninstall:** The engine now has a clean self-destruct routine (Option 18) protected by a text challenge (CAPTCHA).
+*   **Background Service:** Runs silently at the user level, allowing auto-start without requiring administrative privileges for daily tasks.
 
 ---
 
@@ -33,13 +34,14 @@ The core tools required by the engine are:
 *   `sqlite3` (For fast metadata indexing)
 
 **🐧 On Linux:**
-Don't worry, all dependencies are automatically downloaded and configured by our `install-linux.sh` script.
+Don't worry, all dependencies are automatically downloaded and configured by our `install-linux.sh` script. Virtual drive support utilizes the native system `fuse` package.
 
 **🪟 On Windows:**
 You must manually download and install these tools before running the installer. Make sure to select **"Add to PATH"** during installation:
-*   **Python 3:** [Download Windows Installer](https://www.python.org/downloads/windows/)
-*   **Rclone:** [Download Rclone](https://rclone.org/downloads/) *(Extract the `.exe` and place it in a folder in your PATH, e.g., `C:\Windows`)*
-*   **SQLite3:** [Download SQLite Tools](https://www.sqlite.org/download.html) *(Extract the `.exe` and place it in your PATH)*
+1.  **Python 3:** [Download Windows Installer](https://www.python.org/downloads/windows/)
+2.  **Rclone:** [Download Rclone](https://rclone.org/downloads/) *(Extract the `.exe` and place it in a folder in your PATH, e.g., `C:\Windows`)*
+3.  **SQLite3:** [Download SQLite Tools](https://www.sqlite.org/download.html) *(Extract the `.exe` and place it in your PATH)*
+4.  **WinFsp:** [Download WinFsp](https://winfsp.dev/) *(Required **ONLY** if you plan to use the Virtual Drive Mount feature - Menu Option 13).*
 
 ### Step-by-Step Installation
 
@@ -78,8 +80,6 @@ Sync Engine can be operated via the interactive wizard or direct terminal shortc
 | `start` / `stop` / `reload` | Turns ON, OFF, or RELOADS the invisible background service. |
 | `status` | Displays current service status and recent memory logs. |
 
-*(Tip: Sending an invalid command will now safely display the Help menu and exit).*
-
 ---
 
 ## 🛠️ Interactive Wizard Guide (`sync-engine config`)
@@ -87,10 +87,10 @@ Sync Engine can be operated via the interactive wizard or direct terminal shortc
 The interactive menu has been expanded to support v7.0's granular management:
 
 1. **Account Configuration (Options 1 to 3):** Add, list, or remove local folder links to your clouds. Removing an account triggers intelligent garbage collection.
-2. **Global Settings (Option 4):** Change sync intervals, global bandwidth limits (`BW_LIMIT`), set the absolute folder path for saved reports, and toggle auto-blocking for case-sensitivity collisions.
-3. **Account Filters & Limits (Option 5):** Choose a specific account to assign custom max size limits and manage its exclusion list (ignored files/folders).
-4. **Extra Actions & Reports (Options 6 to 11):** Shortcuts for immediate execution (`now`), simulation (`test`), local/remote large file reports, cleaner, error analyzer, and system doctor.
-5. **Engine Control (Options 12 to 16):** Friendly interface to start, stop, check status, update, or trigger the system-wide **Auto-Uninstall**.
+2. **Global Settings (Option 4):** Change sync intervals, global bandwidth limits (`BW_LIMIT`), set the absolute folder path for saved reports, and toggle case-sensitivity blocking.
+3. **Account Filters & Limits (Option 5):** Choose a specific account to assign custom max size limits and manage its exclusion list.
+4. **Extra Actions & Reports (Options 6 to 13):** Shortcuts for immediate execution (`now`), simulation (`test`), large file reports, cleaner, error analyzer, system doctor, **Cloud-to-Cloud Migration**, and **Virtual Drive Mount**.
+5. **Engine Control (Options 14 to 18):** Friendly interface to start, stop, check status, update, or trigger the system-wide **Auto-Uninstall**.
 
 ---
 
@@ -116,22 +116,11 @@ To turn your PC into a true "server":
 
 ---
 
-## ⚠️ Known Limitations
-
-1. **Not Real-Time (Inotify):** The script does not actively monitor every disk click. It operates in cyclical scanning windows (default: every 5 minutes). 
-2. **Ignores Symlinks:** To prevent accidental infinite loops, the engine does not copy or follow system shortcuts.
-3. **Initial Resync Time:** On the very first sync of an account, the engine will run a deep scan (`--resync`), which may take a few minutes. Subsequent cycles will be nearly instantaneous.
-4. **Personal Vaults:** The engine blocks access to OneDrive's *Personal Vault* by default to prevent API read permission failures.
-
----
-
 ## 🗑️ Uninstallation
-
-The `.cmd` and `.sh` external uninstaller method was deprecated in version 7.0 to prevent version mismatch issues.
 
 To completely remove Sync Engine from your system (clearing the root executable, system shortcuts, and turning off background services):
 1. Open your terminal and type `sync-engine config`
-2. Select **Option 16 (Uninstall Sync Engine)**
+2. Select **Option 18 (Uninstall Sync Engine)**
 3. The system will prompt you with a random text challenge (CAPTCHA) to confirm the deletion.
-4. You will be asked if you want to keep or permanently delete your configuration history and old reports from the `.config` folder.
+4. You will be asked if you want to keep or permanently delete your configuration history and old reports.
 5. The software will safely self-destruct in 3 seconds.

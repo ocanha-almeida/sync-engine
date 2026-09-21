@@ -590,6 +590,118 @@ def run_update():
     except Exception as e:
         print(f"\n❌ Erro durante o processo de atualização: {e}"); pause()
 
+def run_cloud_migration():
+    clear_screen()
+    print("="*45 + "\n☁️ MIGRAÇÃO DIRETA NUVEM-PARA-NUVEM\n" + "="*45)
+    print("Transfere arquivos entre provedores usando a memória RAM.")
+    print("Não consome espaço no seu disco rígido local.\n")
+    
+    # 1. Listar nuvens disponíveis
+    res = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    remotes = [r.strip(':') for r in res.stdout.strip().split('\n') if r.strip()]
+    if len(remotes) < 2:
+        print("❌ Você precisa de pelo menos 2 nuvens configuradas no Rclone para migrar.")
+        pause(); return
+
+    print("Provedores Disponíveis:")
+    for i, r in enumerate(remotes): print(f"  [{i+1}] {r}")
+    
+    op_src = input("\nNuvem de ORIGEM (Número) [Enter p/ cancelar]: ").strip()
+    if not op_src.isdigit() or not (1 <= int(op_src) <= len(remotes)): return
+    src_remote = remotes[int(op_src)-1]
+
+    op_dst = input("Nuvem de DESTINO (Número) [Enter p/ cancelar]: ").strip()
+    if not op_dst.isdigit() or not (1 <= int(op_dst) <= len(remotes)): return
+    dst_remote = remotes[int(op_dst)-1]
+    
+    if src_remote == dst_remote:
+        print("❌ Origem e Destino não podem ser a mesma nuvem."); pause(); return
+
+    print(f"\nFluxo configurado: {src_remote} ➔ {dst_remote}")
+    
+    print("\nModo de Transferência:")
+    print("  [1] 📦 TOTAL   (Copia ABSOLUTAMENTE TUDO, incluindo arquivos ocultos e .nosync)")
+    print("  [2] 🛡️ PARCIAL (Ignora arquivos '.nosync' e pastas marcadas para bloqueio)")
+    
+    modo = input("\nOpção (1-2) [Enter p/ cancelar]: ").strip()
+    if modo not in ['1', '2']: return
+    
+    cmd = ["rclone", "copy", f"{src_remote}:", f"{dst_remote}:", "-P", "--transfers=4", "--checkers=8"]
+    
+    if modo == '2':
+        # Cria um arquivo de filtro temporário para a migração parcial
+        import tempfile
+        fd, temp_filter = tempfile.mkstemp(suffix=".txt")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write("- .nosync\n")
+            f.write("- **/.nosync/**\n")
+            f.write("- .DS_Store\n")
+            f.write("- Thumbs.db\n")
+        cmd.append(f"--filter-from={temp_filter}")
+        print("\nFiltro Parcial ativado (Lixeira e .nosync bloqueados).")
+    
+    print("\nIniciando transferência direta. Pressione Ctrl+C a qualquer momento para abortar.")
+    print("Se a internet cair, basta rodar de novo e ele continuará de onde parou.\n" + "-"*45)
+    
+    try:
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        print("\n\n⏹️ Transferência interrompida pelo usuário.")
+    
+    if modo == '2': os.remove(temp_filter)
+    print("\n✅ Operação de migração finalizada."); pause()
+
+def run_mount_manager():
+    clear_screen()
+    print("="*45 + "\n🔌 MAPEAR NUVEM COMO DISCO VIRTUAL (MOUNT)\n" + "="*45)
+    print("⚠️ ATENÇÃO - REQUISITOS DO SISTEMA:")
+    print("   Linux: Requer o pacote 'fuse' instalado (padrão no Ubuntu).")
+    print("   Windows: Exige o programa gratuito 'WinFsp' instalado.\n")
+    
+    res = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    remotes = [r.strip(':') for r in res.stdout.strip().split('\n') if r.strip()]
+    if not remotes:
+        print("❌ Nenhuma nuvem configurada no Rclone."); pause(); return
+
+    for i, r in enumerate(remotes): print(f"  [{i+1}] {r}")
+    
+    op = input("\nQual nuvem deseja mapear? (Número) [Enter p/ cancelar]: ").strip()
+    if not op.isdigit() or not (1 <= int(op) <= len(remotes)): return
+    remote = remotes[int(op)-1]
+    
+    if SISTEMA == "Windows":
+        print("\nDigite uma letra de unidade livre no Windows (Ex: X, Y, Z)")
+        letra = input("Letra: ").strip().upper()
+        if not letra or len(letra) > 1: return
+        letra = f"{letra}:"
+        
+        # Inicia um CMD independente para segurar o processo do disco virtual
+        cmd_mount = f"start cmd /k rclone mount {remote}: {letra} --vfs-cache-mode writes --network-mode --volname \"{remote}\""
+        print(f"\n⏳ Mapeando {remote} em {letra}...")
+        subprocess.Popen(cmd_mount, shell=True)
+        print("✅ Uma nova janela preta foi aberta gerenciando o disco.")
+        print("Para ejetar a nuvem, basta fechar aquela janela de terminal!")
+        
+    else: # Linux
+        pasta = input(f"\nCaminho da pasta vazia para montar (Enter = ~/Desktop/{remote}): ").strip()
+        if not pasta: pasta = f"~/Desktop/{remote}"
+        pasta_expandida = os.path.expanduser(pasta)
+        os.makedirs(pasta_expandida, exist_ok=True)
+        
+        # Usa a flag --daemon exclusiva do Unix para rodar em background
+        cmd_mount = ["rclone", "mount", f"{remote}:", pasta_expandida, "--vfs-cache-mode", "writes", "--daemon"]
+        print(f"\n⏳ Montando {remote} na pasta {pasta_expandida}...")
+        res = subprocess.run(cmd_mount, capture_output=True, text=True)
+        
+        if res.returncode == 0:
+            print("✅ Disco montado com sucesso em segundo plano!")
+            print(f"Para desmontar depois, use o comando de terminal: fusermount -u {pasta_expandida}")
+        else:
+            print(f"❌ Erro ao montar: {res.stderr.strip()}")
+            print("Dica: Certifique-se de ter o 'fuse' instalado (sudo apt install fuse3).")
+            
+    pause()
+
 def run_doctor(config):
     print("="*45 + "\n🩺 DIAGNÓSTICO DO SISTEMA\n" + "="*45)
     
@@ -708,13 +820,15 @@ def run_config_wizard():
         print("9. 🧹 Higienizador e Verificador de Colisão")
         print("10. 🔎 Analisador de Erros de Sincronização")
         print("11. 🩺 Diagnóstico do Sistema (Doctor)")
+        print("12. ☁️  Migração Direta Nuvem-para-Nuvem")
+        print("13. 🔌 Mapear Nuvem como Disco Virtual (Mount)")
         
         print("\n--- Motor de Segundo Plano ---")
-        print("12. ▶️ Ligar Serviço")
-        print("13. ⏹️ Desligar Serviço")
-        print("14. ℹ️ Checar Status do Motor")
-        print("15. 🔄 Atualizar Versão do Aplicativo")
-        print("16. 🧨 Desinstalar o Sync Engine")
+        print("14. ▶️ Ligar Serviço")
+        print("15. ⏹️ Desligar Serviço")
+        print("16. ℹ️ Checar Status do Motor")
+        print("17. 🔄 Atualizar Versão do Aplicativo")
+        print("18. 🧨 Desinstalar o Sync Engine")
         
         print("\n[Enter] Sair\n" + "="*45)
         
@@ -866,17 +980,24 @@ def run_config_wizard():
         elif escolha == '9': run_filename_cleaner()
         elif escolha == '10': run_analyze_errors()
         elif escolha == '11': clear_screen(); run_doctor(config)
-        elif escolha == '12': clear_screen(); manage_service("start", LOG_FILE); pause()
-        elif escolha == '13': clear_screen(); manage_service("stop", LOG_FILE); logger.info("Motor parado manualmente pelo usuário."); pause()
-        elif escolha == '14': clear_screen(); manage_service("status", LOG_FILE); pause()
-        elif escolha == '15': run_update()
-        elif escolha == '16': run_uninstall()
+        elif escolha == '12': run_cloud_migration()
+        elif escolha == '13': run_mount_manager()
+        elif escolha == '14': clear_screen(); manage_service("start", LOG_FILE); pause()
+        elif escolha == '15': clear_screen(); manage_service("stop", LOG_FILE); logger.info("Motor parado manualmente."); pause()
+        elif escolha == '16': clear_screen(); manage_service("status", LOG_FILE); pause()
+        elif escolha == '17': run_update()
+        elif escolha == '18': run_uninstall()
 
 def print_help():
     print(f"\n=== Sync Engine Multi-Contas (v{VERSION}) ===")
     print("Uso: sync-engine [COMANDO]")
     print("  config         Assistente interativo.")
     print("  now            🚀 Sincroniza AGORA.")
+    print("  test           🧪 Inicia o modo Test-Drive (Dry-Run).")
+    print("  clean          🧹 Higienizador de nomes de arquivos.")
+    print("  analyze        🔎 Analisador de erros e soluções.")
+    print("  doctor         🩺 Diagnóstico de saúde do sistema.")
+    print("  update         🔄 Baixa e instala a última versão.")
     print("  start/stop     Liga/Desliga o serviço invisível.")
     print("  status/reload  Checa logs ou reinicia o serviço invisível.")
     print("  -v, --version  Exibe a versão.")
@@ -893,6 +1014,13 @@ if __name__ == "__main__":
             sys.exit(0)
         elif comando == "config": run_config_wizard()
         elif comando == "now": run_now()
+        elif comando == "test": run_dry_run()
+        elif comando == "clean": run_filename_cleaner()
+        elif comando == "analyze": run_analyze_errors()
+        elif comando == "doctor": 
+            clear_screen()
+            run_doctor(load_config())
+        elif comando == "update": run_update()
         elif comando == "start": manage_service("start", LOG_FILE)
         elif comando == "stop": manage_service("stop", LOG_FILE); logger.info("Motor parado via linha de comando.")
         elif comando == "status": manage_service("status", LOG_FILE)
