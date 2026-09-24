@@ -606,41 +606,140 @@ def run_cloud_migration():
     print("Provedores Disponíveis:")
     for i, r in enumerate(remotes): print(f"  [{i+1}] {r}")
     
+    # 2. Configurar ORIGEM com suporte a subpastas
     op_src = input("\nNuvem de ORIGEM (Número) [Enter p/ cancelar]: ").strip()
     if not op_src.isdigit() or not (1 <= int(op_src) <= len(remotes)): return
     src_remote = remotes[int(op_src)-1]
+    
+    src_path = input(f"📁 Subpasta na origem (Deixe em branco para a raiz '/'): ").strip()
+    src_full = f"{src_remote}:{src_path}" if src_path else f"{src_remote}:"
 
-    op_dst = input("Nuvem de DESTINO (Número) [Enter p/ cancelar]: ").strip()
+    # 3. Configurar DESTINO com suporte a subpastas
+    op_dst = input("\nNuvem de DESTINO (Número) [Enter p/ cancelar]: ").strip()
     if not op_dst.isdigit() or not (1 <= int(op_dst) <= len(remotes)): return
     dst_remote = remotes[int(op_dst)-1]
     
-    if src_remote == dst_remote:
-        print("❌ Origem e Destino não podem ser a mesma nuvem."); pause(); return
+    dst_path = input(f"📁 Subpasta no destino (Deixe em branco para a raiz '/'): ").strip()
+    dst_full = f"{dst_remote}:{dst_path}" if dst_path else f"{dst_remote}:"
+    
+    if src_full == dst_full:
+        print("❌ Origem e Destino não podem ser o mesmo caminho."); pause(); return
 
-    print(f"\nFluxo configurado: {src_remote} ➔ {dst_remote}")
+    print(f"\nFluxo configurado: {src_full} ➔ {dst_full}")
     
     print("\nModo de Transferência:")
-    print("  [1] 📦 TOTAL   (Copia ABSOLUTAMENTE TUDO, incluindo arquivos ocultos e .nosync)")
-    print("  [2] 🛡️ PARCIAL (Ignora arquivos '.nosync' e pastas marcadas para bloqueio)")
+    print("  [1] 📦 TOTAL         (Copia ABSOLUTAMENTE TUDO)")
+    print("  [2] 🛡️  PADRÃO        (Bloqueia cofres, lixeiras e pastas com marcador .nosync)")
+    print("  [3] ⚙️  PERSONALIZADO (Padrão + Importa os filtros do config.json da conta origem)")
     
-    modo = input("\nOpção (1-2) [Enter p/ cancelar]: ").strip()
-    if modo not in ['1', '2']: return
+    modo = input("\nOpção (1-3) [Enter p/ cancelar]: ").strip()
+    if modo not in ['1', '2', '3']: return
     
-    cmd = ["rclone", "copy", f"{src_remote}:", f"{dst_remote}:", "-P", "--transfers=4", "--checkers=8"]
+    tamanho = input("\nTamanho máximo por arquivo (Ex: 1G, 500M, 0 = Ilimitado) [0]: ").strip()
     
-    if modo == '2':
-        # Cria um arquivo de filtro temporário para a migração parcial
+    cmd = ["rclone", "copy", src_full, dst_full, "-P", "--transfers=4", "--checkers=8", "--ignore-errors"]
+    
+    if tamanho and tamanho != "0":
+        cmd.append(f"--max-size={tamanho}")
+        print(f"\n📏 Limite de tamanho ativado: Ignorando arquivos maiores que {tamanho}.")
+    
+    filtros_extras_list = []
+    nosync_folders = []
+    
+    if modo in ['2', '3']:
+        print("\n🔍 Escaneando a nuvem em busca de marcadores '.nosync' (Pode levar alguns segundos)...")
+        # Pre-scan que burla o bug da Microsoft buscando apenas arquivos .nosync
+        cmd_scan = ["rclone", "lsf", src_full, "-R", "--include", ".nosync", "--ignore-errors"]
+        res_scan = subprocess.run(cmd_scan, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        
+        for line in res_scan.stdout.splitlines():
+            line = line.strip()
+            if line.endswith(".nosync"):
+                folder = line[:-7] # Extrai exatamente o nome da pasta (ex: "PastaTeste/")
+                if folder:
+                    nosync_folders.append(folder)
+                    
         import tempfile
         fd, temp_filter = tempfile.mkstemp(suffix=".txt")
+        
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            f.write("- .nosync\n")
-            f.write("- **/.nosync/**\n")
+            # 1. ORDEM MÁXIMA: Cofres (Impede a quebra da API)
+            f.write("- Personal Vault/**\n")
+            f.write("- Cofre Pessoal/**\n")
             f.write("- .DS_Store\n")
             f.write("- Thumbs.db\n")
+            
+            # 2. Injeta dinamicamente as pastas identificadas no pré-scan
+            for folder in nosync_folders:
+                f.write(f"- {folder}**\n")
+            
+            # Bloqueia os arquivos marcadores isolados por precaução
+            f.write("- **/.nosync\n")
+            
+            # 3. Importação dos Filtros Personalizados do config.json
+            if modo == '3':
+                config = load_config()
+                for acc in config.get("ACCOUNTS", []):
+                    remoto_json = acc.get("REMOTE_NAME", "").lower()
+                    perfil_json = acc.get("PROFILE_NAME", "").lower()
+                    
+                    if src_remote.lower() == remoto_json or src_remote.lower() == perfil_json:
+                        filtros = acc.get("IGNORE_PATTERNS", [])
+                        for path in filtros:
+                            f.write(f"- {path}\n")
+                            filtros_extras_list.append(path)
+                        break
+                        
         cmd.append(f"--filter-from={temp_filter}")
-        print("\nFiltro Parcial ativado (Lixeira e .nosync bloqueados).")
+        if modo == '3':
+            print(f"⚙️ Filtro Personalizado ativado ({len(nosync_folders)} pastas .nosync + {len(filtros_extras_list)} regras locais).")
+        else:
+            print(f"🛡️ Filtro Padrão ativado ({len(nosync_folders)} pastas com marcador .nosync isoladas).")
+
+    # ----- Geração de Relatório Isolado com Cabeçalho -----
+    config = load_config()
+    report_dir = os.path.normpath(get_report_dir(config))
+    agora_arquivo = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    agora_texto = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+    report_file = os.path.join(report_dir, f"migracao_{src_remote}_para_{dst_remote}_{agora_arquivo}.txt")
     
-    print("\nIniciando transferência direta. Pressione Ctrl+C a qualquer momento para abortar.")
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write("="*45 + "\n")
+        f.write("☁️ RELATÓRIO DE MIGRAÇÃO DIRETA\n")
+        f.write(f"Data/Hora: {agora_texto}\n")
+        f.write(f"Origem:    {src_full}\n")
+        f.write(f"Destino:   {dst_full}\n")
+        
+        if modo == '1': tipo_modo = "TOTAL (Cópia absoluta)"
+        elif modo == '2': tipo_modo = "PADRÃO (Travas de segurança)"
+        else: tipo_modo = "PERSONALIZADO (Travas + Filtros do config.json)"
+        f.write(f"Modo:      {tipo_modo}\n")
+        
+        limite_str = tamanho if (tamanho and tamanho != "0") else "Ilimitado"
+        f.write(f"Tamanho Máx: {limite_str}\n")
+        
+        if modo in ['2', '3']:
+            f.write("\nFiltros Aplicados nesta Sessão:\n")
+            f.write(" - Personal Vault/**\n - Cofre Pessoal/**\n - .DS_Store\n - Thumbs.db\n")
+            
+            if nosync_folders:
+                f.write("\n [Pastas dinamicamente bloqueadas pelo marcador '.nosync':]\n")
+                for folder in nosync_folders:
+                    f.write(f" - {folder}**\n")
+            else:
+                f.write("\n - [Nenhum marcador '.nosync' localizado na origem]\n")
+                
+            if modo == '3' and filtros_extras_list:
+                f.write("\n [Filtros Extras importados do config.json:]\n")
+                for p in filtros_extras_list:
+                    f.write(f" - {p}\n")
+        f.write("="*45 + "\n\n")
+    
+    cmd.extend(["-v", f"--log-file={report_file}"])
+    # --------------------------------------------------------
+    
+    print(f"\n📝 Gerando relatório detalhado em: {report_file}")
+    print("Iniciando transferência direta. Pressione Ctrl+C a qualquer momento para abortar.")
     print("Se a internet cair, basta rodar de novo e ele continuará de onde parou.\n" + "-"*45)
     
     try:
@@ -648,59 +747,82 @@ def run_cloud_migration():
     except KeyboardInterrupt:
         print("\n\n⏹️ Transferência interrompida pelo usuário.")
     
-    if modo == '2': os.remove(temp_filter)
-    print("\n✅ Operação de migração finalizada."); pause()
+    if modo in ['2', '3']: os.remove(temp_filter)
+    
+    clean_log_file(report_file)
+    print(f"\n✅ Operação finalizada. Relatório salvo em: {report_file}"); pause()
 
 def run_mount_manager():
     clear_screen()
-    print("="*45 + "\n🔌 MAPEAR NUVEM COMO DISCO VIRTUAL (MOUNT)\n" + "="*45)
+    config = load_config()
+    print("="*45 + "\n🔌 GERENCIADOR DE DISCOS VIRTUAIS (MOUNT)\n" + "="*45)
     print("⚠️ ATENÇÃO - REQUISITOS DO SISTEMA:")
     print("   Linux: Requer o pacote 'fuse' instalado (padrão no Ubuntu).")
     print("   Windows: Exige o programa gratuito 'WinFsp' instalado.\n")
     
-    res = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    remotes = [r.strip(':') for r in res.stdout.strip().split('\n') if r.strip()]
-    if not remotes:
-        print("❌ Nenhuma nuvem configurada no Rclone."); pause(); return
+    ACCOUNTS = config.get("ACCOUNTS", [])
+    if not ACCOUNTS:
+        print("❌ Nenhuma conta configurada no Sync Engine."); pause(); return
 
-    for i, r in enumerate(remotes): print(f"  [{i+1}] {r}")
+    for i, acc in enumerate(ACCOUNTS):
+        status = "🟢 AUTO-MOUNT ATIVADO" if acc.get("AUTO_MOUNT") else "🔴 MANUAL"
+        caminho = f" -> {acc.get('MOUNT_PATH')}" if acc.get("AUTO_MOUNT") else ""
+        print(f"  [{i+1}] {acc['PROFILE_NAME']} ({acc['REMOTE_NAME']}:) [{status}{caminho}]")
     
-    op = input("\nQual nuvem deseja mapear? (Número) [Enter p/ cancelar]: ").strip()
-    if not op.isdigit() or not (1 <= int(op) <= len(remotes)): return
-    remote = remotes[int(op)-1]
+    op = input("\nEscolha a conta para configurar (Número) [Enter p/ cancelar]: ").strip()
+    if not op.isdigit() or not (1 <= int(op) <= len(ACCOUNTS)): return
+    acc = ACCOUNTS[int(op)-1]
     
+    print(f"\n--- Configurando Mount para: {acc['PROFILE_NAME']} ---")
+    print("  [1] 🔌 Montar temporariamente AGORA (Janela/Terminal aberto)")
+    print("  [2] 🔄 ATIVAR Montagem Automática (Restabelece junto com o Sync Engine)")
+    print("  [3] ⏹️ DESATIVAR Montagem Automática")
+    
+    acao = input("\nAção (1-3) [Enter p/ cancelar]: ").strip()
+    if acao not in ['1', '2', '3']: return
+
+    if acao == '3':
+        acc["AUTO_MOUNT"] = False
+        acc["MOUNT_PATH"] = ""
+        save_config(config, f"Auto-Mount desativado para {acc['PROFILE_NAME']}")
+        manage_service("reload", LOG_FILE)
+        print("\n✅ Montagem automática desativada! Ela não será mais recriada no boot."); pause(); return
+        
     if SISTEMA == "Windows":
         print("\nDigite uma letra de unidade livre no Windows (Ex: X, Y, Z)")
         letra = input("Letra: ").strip().upper()
         if not letra or len(letra) > 1: return
-        letra = f"{letra}:"
-        
-        # Inicia um CMD independente para segurar o processo do disco virtual
-        cmd_mount = f"start cmd /k rclone mount {remote}: {letra} --vfs-cache-mode writes --network-mode --volname \"{remote}\""
-        print(f"\n⏳ Mapeando {remote} em {letra}...")
-        subprocess.Popen(cmd_mount, shell=True)
-        print("✅ Uma nova janela preta foi aberta gerenciando o disco.")
-        print("Para ejetar a nuvem, basta fechar aquela janela de terminal!")
-        
+        mount_path = f"{letra}:"
     else: # Linux
-        pasta = input(f"\nCaminho da pasta vazia para montar (Enter = ~/Desktop/{remote}): ").strip()
-        if not pasta: pasta = f"~/Desktop/{remote}"
-        pasta_expandida = os.path.expanduser(pasta)
-        os.makedirs(pasta_expandida, exist_ok=True)
+        default_path = f"~/Desktop/{acc['REMOTE_NAME']}"
+        pasta = input(f"\nCaminho da pasta vazia para montar (Enter = {default_path}): ").strip()
+        mount_path = os.path.expanduser(pasta) if pasta else os.path.expanduser(default_path)
         
-        # Usa a flag --daemon exclusiva do Unix para rodar em background
-        cmd_mount = ["rclone", "mount", f"{remote}:", pasta_expandida, "--vfs-cache-mode", "writes", "--daemon"]
-        print(f"\n⏳ Montando {remote} na pasta {pasta_expandida}...")
-        res = subprocess.run(cmd_mount, capture_output=True, text=True)
+    if acao == '2':
+        acc["AUTO_MOUNT"] = True
+        acc["MOUNT_PATH"] = mount_path
+        save_config(config, f"Auto-Mount ativado para {acc['PROFILE_NAME']} em {mount_path}")
+        print("\n✅ Auto-Mount ativado! Recarregando o motor para efetivar...")
+        manage_service("reload", LOG_FILE); pause(); return
         
-        if res.returncode == 0:
-            print("✅ Disco montado com sucesso em segundo plano!")
-            print(f"Para desmontar depois, use o comando de terminal: fusermount -u {pasta_expandida}")
+    if acao == '1':
+        if SISTEMA == "Windows":
+            cmd_mount = f"start cmd /k rclone mount {acc['REMOTE_NAME']}: {mount_path} --vfs-cache-mode writes --links --network-mode --volname \"{acc['REMOTE_NAME']}\""
+            print(f"\n⏳ Mapeando {acc['REMOTE_NAME']} em {mount_path}...")
+            subprocess.Popen(cmd_mount, shell=True)
+            print("✅ Uma nova janela preta foi aberta gerenciando o disco.")
+            print("Para ejetar a nuvem, basta fechar aquela janela de terminal!")
         else:
-            print(f"❌ Erro ao montar: {res.stderr.strip()}")
-            print("Dica: Certifique-se de ter o 'fuse' instalado (sudo apt install fuse3).")
-            
-    pause()
+            os.makedirs(mount_path, exist_ok=True)
+            cmd_mount = ["rclone", "mount", f"{acc['REMOTE_NAME']}:", mount_path, "--vfs-cache-mode", "writes", "--daemon"]
+            print(f"\n⏳ Montando {acc['REMOTE_NAME']} em {mount_path}...")
+            res = subprocess.run(cmd_mount, capture_output=True, text=True)
+            if res.returncode == 0:
+                print("✅ Disco montado com sucesso em segundo plano!")
+                print(f"Para desmontar depois, use o comando: fusermount -u {mount_path}")
+            else:
+                print(f"❌ Erro ao montar: {res.stderr.strip()}")
+        pause()
 
 def run_doctor(config):
     print("="*45 + "\n🩺 DIAGNÓSTICO DO SISTEMA\n" + "="*45)
@@ -944,7 +1066,7 @@ def run_config_wizard():
                 while True:
                     clear_screen(); print(f"--- Configurações: {conta['PROFILE_NAME']} ---")
                     print(f"📦 Limite de Tamanho: {tamanho_max} (0 = Ilimitado)")
-                    print("\n🛡️ Filtros de Exclusão Atuais:")
+                    print("\n🛡️  Filtros de Exclusão Atuais:")
                     for j, p in enumerate(padroes): print(f"  [{j+1}] {p}")
                     
                     print("\n[T] Alterar Tamanho Máx.  [A] Adicionar Filtro  [R] Remover Filtro")
@@ -987,6 +1109,56 @@ def run_config_wizard():
         elif escolha == '16': clear_screen(); manage_service("status", LOG_FILE); pause()
         elif escolha == '17': run_update()
         elif escolha == '18': run_uninstall()
+
+def ensure_mount(acc):
+    if not acc.get("AUTO_MOUNT") or not acc.get("MOUNT_PATH"): return
+    mount_path = acc["MOUNT_PATH"]
+    remote = acc["REMOTE_NAME"]
+    
+    # 1. Ping Check robusto via Socket TCP (Porta 53 DNS - Instantâneo)
+    import socket
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+    except OSError:
+        logger.warning(f"[{acc['PROFILE_NAME']}] Sem internet. Adiada montagem do disco.")
+        return
+        
+    if SISTEMA == "Windows":
+        ps_check = f"Get-WmiObject Win32_Process -Filter \"Name='rclone.exe'\" | Where-Object {{ $_.CommandLine -match 'mount' -and $_.CommandLine -match '{mount_path}' }}"
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", f"({ps_check}).ProcessId"], capture_output=True, text=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000))
+        if not res.stdout.strip():
+            ps_kill = f"Get-WmiObject Win32_Process -Filter \"Name='rclone.exe'\" | Where-Object {{ $_.CommandLine -match '{mount_path}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000))
+            cmd = ["rclone", "mount", f"{remote}:", mount_path, "--vfs-cache-mode", "writes", "--links", "--network-mode", "--volname", remote]
+            subprocess.Popen(cmd, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000))
+            logger.info(f"[{acc['PROFILE_NAME']}] Disco virtual (Auto-Mount) restabelecido em {mount_path}")
+    
+    else: # Linux
+        is_mounted = False
+        try:
+            # Tenta verificar. Se for uma pasta "cadáver", o Python vai gritar, e o except captura.
+            is_mounted = os.path.ismount(mount_path)
+        except Exception:
+            pass 
+            
+        if not is_mounted:
+            # Força o Systemd a enxergar as pastas de binários locais e do sistema
+            env = os.environ.copy()
+            env["PATH"] = f"{env.get('PATH', '')}:/usr/local/bin:/usr/bin:/bin:{os.path.expanduser('~/.local/bin')}"
+            
+            # Limpeza cirúrgica com text=True para ler eventuais erros
+            subprocess.run(["fusermount", "-uz", mount_path], capture_output=True, text=True, env=env)
+            os.makedirs(mount_path, exist_ok=True)
+            
+            # Inicia o daemon invisível
+            cmd = ["rclone", "mount", f"{remote}:", mount_path, "--vfs-cache-mode", "writes", "--daemon"]
+            res = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            
+            if res.returncode == 0:
+                logger.info(f"[{acc['PROFILE_NAME']}] Disco virtual (Auto-Mount) ativado com sucesso em {mount_path}")
+            else:
+                # Agora o erro real será gravado nos logs!
+                logger.error(f"[{acc['PROFILE_NAME']}] Erro crítico no Auto-Mount: {res.stderr.strip()}")
 
 def print_help():
     print(f"\n=== Sync Engine Multi-Contas (v{VERSION}) ===")
@@ -1048,6 +1220,7 @@ if __name__ == "__main__":
             if not ACCOUNTS: sys.exit(1)
 
             for acc in ACCOUNTS:
+                ensure_mount(acc)
                 profile = acc.get("PROFILE_NAME", "Local")
                 local_dir = os.path.expanduser(acc["LOCAL_DIR"])
                 os.makedirs(local_dir, exist_ok=True)

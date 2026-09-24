@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import platform
 import shutil
@@ -40,14 +41,18 @@ def manage_service(action, log_file):
             
         if action == "start":
             res = subprocess.run(["systemctl", "--user", "enable", "--now", service_name], capture_output=True, text=True)
-            if res.returncode == 0: print("✅ Motor Linux (Systemd) iniciado e habilitado.")
+            if res.returncode == 0: print("✅ Motor Linux (Systemd) iniciado e ativado.")
             else: print(f"❌ Erro ao iniciar o motor: {res.stderr.strip()}")
         elif action == "stop":
             subprocess.run(["systemctl", "--user", "disable", "--now", service_name], capture_output=True)
-            print("🛑 Motor Linux (Systemd) parado e desabilitado.")
+            print("🛑 Motor Linux (Systemd) parado e desativado.")
         elif action == "status":
             subprocess.run(["systemctl", "--user", "status", service_name])
         elif action == "reload":
+            res = subprocess.run(["systemctl", "--user", "is-enabled", service_name], capture_output=True, text=True)
+            if "enabled" not in res.stdout:
+                print("\n⚠️ O motor estava desativado. Alterações salvas, mas o motor continuará desligado.")
+                return
             subprocess.run(["systemctl", "--user", "restart", service_name], capture_output=True)
             print("🔄 Motor Linux (Systemd) reiniciado.")
             
@@ -56,37 +61,60 @@ def manage_service(action, log_file):
         shortcut_path = os.path.join(startup_dir, "SyncEngine.lnk")
         base_dir = os.path.dirname(os.path.abspath(__file__))
         
+        # Obtém o caminho absoluto do interpretador atual
+        python_exe = sys.executable
+        pythonw_exe = python_exe.replace("python.exe", "pythonw.exe")
+        script_path = os.path.join(base_dir, "sync_engine.py")
+
         if action == "start":
-            # Cria atalho invisível e inicia o processo sem piscar tela
-            ps_script = f"$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('{shortcut_path}'); $Shortcut.TargetPath = 'pythonw.exe'; $Shortcut.Arguments = '`\"{base_dir}\\sync_engine.py`\"'; $Shortcut.WorkingDirectory = '{base_dir}'; $Shortcut.WindowStyle = 0; $Shortcut.Save()"
+            # O MÉTODO COMPROVADO: Cria o atalho apontando direto pro motor
+            ps_script = f"$WshShell = New-Object -comObject WScript.Shell; $Shortcut =$WshShell.CreateShortcut('{shortcut_path}'); $Shortcut.TargetPath = '{pythonw_exe}';$Shortcut.Arguments = '`\"{script_path}`\"'; $Shortcut.WorkingDirectory = '{base_dir}'; $Shortcut.WindowStyle = 0; $Shortcut.Save()"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], creationflags=_get_cflags())
-            subprocess.Popen(["pythonw", "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
-            print("✅ Motor Windows iniciado imediatamente e habilitado no Startup.")
             
+            # Inicia na memória agora
+            subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
+            print("✅ Motor Windows iniciado e Inicialização Automática ativada!")
+
         elif action == "stop":
-            # Apaga o atalho de inicialização
-            if os.path.exists(shortcut_path): os.remove(shortcut_path)
+            if os.path.exists(shortcut_path):
+                try: os.remove(shortcut_path)
+                except: pass
             
-            # Caça e aniquila APENAS o processo invisível (pythonw.exe), poupando o menu atual!
-            ps_kill = "Get-WmiObject Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'sync_engine' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+            # Caça e mata usando pipe corrigido e comando robusto
+            ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
-            print("🛑 Motor Windows parado e desabilitado do Startup.")
-            
+            print("🛑 Motor Windows parado e Inicialização Automática desativada.")
+
         elif action == "status":
-            if os.path.exists(shortcut_path): print("\n📊 Status (Startup): Inicialização Automática ATIVADA.")
-            else: print("\n📊 Status (Startup): Inicialização Automática DESATIVADA.")
+            if os.path.exists(shortcut_path):
+                print("\n📊 Status (Inicialização): Automática ATIVADA.")
+            else:
+                print("\n📊 Status (Inicialização): Automática DESATIVADA.")
             
-            # NOVIDADE: Adicionado o filtro Name='pythonw.exe' igual fizemos no Stop!
-            ps_check = "Get-WmiObject Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -match 'sync_engine' }"
-            res = subprocess.run(["powershell", "-NoProfile", "-Command", f"({ps_check}).ProcessId"], capture_output=True, text=True, creationflags=_get_cflags())
+            # Checagem simplificada para evitar falsos negativos no painel
+            ps_check = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } | Select-Object -ExpandProperty ProcessId"
+            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_check], capture_output=True, text=True, creationflags=_get_cflags())
             
-            if res.stdout.strip(): print("🟢 Status (Memória): O motor invisível está RODANDO agora.")
-            else: print("🔴 Status (Memória): O motor invisível está PARADO agora.")
+            if res.stdout.strip():
+                print("🟢 Status (Memória): O motor invisível está RODANDO neste momento.")
+            else:
+                print("🔴 Status (Memória): O motor invisível está PARADO neste momento.")
+
         elif action == "reload":
-            print("\n🔄 Recarregando o motor invisível...")
-            manage_service("stop", log_file)
-            import time; time.sleep(1) # Pausa de 1 segundo para garantir a liberação da memória
-            manage_service("start", log_file)
+            is_enabled = os.path.exists(shortcut_path)
+            
+            print("\n🔄 Recarregando o motor invisível na memória...")
+            # Mata APENAS o processo da memória, não mexe no atalho da pasta Startup!
+            ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
+            
+            import time; time.sleep(1)
+            
+            # Reinicia o processo na memória
+            subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
+            
+            if not is_enabled:
+                print("⚠️ O motor foi reiniciado na memória, mas a Inicialização Automática CONTINUA DESATIVADA.")
 
 def send_notification(title, message, urgency="normal"):
     if SISTEMA == "Linux":

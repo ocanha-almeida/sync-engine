@@ -4,7 +4,7 @@ import logging
 import re
 from logging.handlers import RotatingFileHandler
 
-VERSION = "7.0"
+VERSION = "7.1"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.expanduser("~/.config/sync_engine")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
