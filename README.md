@@ -2,18 +2,19 @@
   <span>🇺🇸 English</span> | <a href="README-pt.md">🇧🇷 Português</a>
 </div>
 
-# 🔄 Sync Engine - Multi-Account Rclone Manager (v7.0)
+# 🔄 Sync Engine - Multi-Account Rclone Manager (v7.2)
 
 An intelligent, interactive, and secure bidirectional cloud sync engine built on top of the powerful `rclone bisync`. Designed for Linux and Windows, it transforms Rclone's complexity into a seamless experience through a comprehensive CLI wizard.
 
 Born from the need to overcome the limitations of traditional cloud clients, this project heavily focuses on automatic background synchronization, native protection against accidental deletions, strict bandwidth/size limits, and surgical bidirectional folder blocking.
 
-## ✨ Key Features (Updated v7.0)
+## ✨ Key Features (Updated v7.2)
 
+*   **Native Internationalization (i18n):** The engine now automatically detects your operating system's language and dynamically translates the entire CLI interface and generated reports. Currently natively supported in **English**, **Portuguese**, **Spanish**, **French**, **German**, and **Simplified Chinese**.
 *   **Cloud-to-Cloud Migration:** Transfer files directly between distinct providers (e.g., OneDrive to Google Drive) using your system's RAM, preserving local disk space and intelligently ignoring blocked folders (`.nosync`).
 *   **Virtual Drive Mount:** Turn any cloud into a "virtual flash drive" seamlessly integrated into your OS (Native Systemd support on Linux and Network Drive on Windows).
 *   **Granular Account Configuration:** Exclusion rules and maximum file size limits (`MAX_SIZE`) are now defined individually for each connected cloud.
-*   **Error Analyzer & Auto-Reconnect (`analyze`):** Forget confusing logs. The engine translates Rclone failures into readable diagnostics. Version 7.0 automatically detects expired security tokens and triggers your browser for instant 1-click renewal.
+*   **Error Analyzer & Auto-Reconnect (`analyze`):** Forget confusing logs. The engine translates Rclone failures into readable diagnostics. Automatically detects expired security tokens and triggers your browser for instant 1-click renewal.
 *   **Smart Bidirectional Blocking (`.nosync`):** Create an empty file named `.nosync` inside any folder (locally or directly in the cloud) and the engine will instantly ignore it.
 *   **Isolated & Standardized Reports:** All history logs are generated with timestamps in the header and isolated by account in your chosen folder.
 *   **Native Filename Cleaner (`clean`):** Scans your local folders for special characters that cause cloud upload errors, shows a safe preview, and generates a detailed report.
@@ -84,7 +85,7 @@ Sync Engine can be operated via the interactive wizard or direct terminal shortc
 
 ## 🛠️ Interactive Wizard Guide (`sync-engine config`)
 
-The interactive menu has been expanded to support v7.0's granular management:
+The interactive menu has been expanded to support granular management:
 
 1. **Account Configuration (Options 1 to 3):** Add, list, or remove local folder links to your clouds. Removing an account triggers intelligent garbage collection.
 2. **Global Settings (Option 4):** Change sync intervals, global bandwidth limits (`BW_LIMIT`), set the absolute folder path for saved reports, and toggle case-sensitivity blocking.

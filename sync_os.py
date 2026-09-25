@@ -35,26 +35,29 @@ WantedBy=default.target
     subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
 
 def manage_service(action, log_file):
+    # Importa a função de tradução aqui para evitar problemas de importação circular no boot do sistema
+    from sync_config import T 
+
     if SISTEMA == "Linux":
         service_name = "sync-engine.service"
         if action in ["start", "reload"]: _setup_linux_service()
             
         if action == "start":
             res = subprocess.run(["systemctl", "--user", "enable", "--now", service_name], capture_output=True, text=True)
-            if res.returncode == 0: print("✅ Motor Linux (Systemd) iniciado e ativado.")
-            else: print(f"❌ Erro ao iniciar o motor: {res.stderr.strip()}")
+            if res.returncode == 0: print(f"✅ {T('Linux Motor (Systemd) started and enabled.')}")
+            else: print(f"❌ {T('Error starting motor:')} {res.stderr.strip()}")
         elif action == "stop":
             subprocess.run(["systemctl", "--user", "disable", "--now", service_name], capture_output=True)
-            print("🛑 Motor Linux (Systemd) parado e desativado.")
+            print(f"🛑 {T('Linux Motor (Systemd) stopped and disabled.')}")
         elif action == "status":
             subprocess.run(["systemctl", "--user", "status", service_name])
         elif action == "reload":
             res = subprocess.run(["systemctl", "--user", "is-enabled", service_name], capture_output=True, text=True)
             if "enabled" not in res.stdout:
-                print("\n⚠️ O motor estava desativado. Alterações salvas, mas o motor continuará desligado.")
+                print(f"\n⚠️ {T('The motor was disabled. Changes saved, but the motor will remain off.')}")
                 return
             subprocess.run(["systemctl", "--user", "restart", service_name], capture_output=True)
-            print("🔄 Motor Linux (Systemd) reiniciado.")
+            print(f"🔄 {T('Linux Motor (Systemd) restarted.')}")
             
     elif SISTEMA == "Windows":
         startup_dir = os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
@@ -73,7 +76,7 @@ def manage_service(action, log_file):
             
             # Inicia na memória agora
             subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
-            print("✅ Motor Windows iniciado e Inicialização Automática ativada!")
+            print(f"✅ {T('Windows Motor started and Automatic Startup enabled!')}")
 
         elif action == "stop":
             if os.path.exists(shortcut_path):
@@ -83,27 +86,27 @@ def manage_service(action, log_file):
             # Caça e mata usando pipe corrigido e comando robusto
             ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
-            print("🛑 Motor Windows parado e Inicialização Automática desativada.")
+            print(f"🛑 {T('Windows Motor stopped and Automatic Startup disabled.')}")
 
         elif action == "status":
             if os.path.exists(shortcut_path):
-                print("\n📊 Status (Inicialização): Automática ATIVADA.")
+                print(f"\n📊 {T('Status (Startup): Automatic ENABLED.')}")
             else:
-                print("\n📊 Status (Inicialização): Automática DESATIVADA.")
+                print(f"\n📊 {T('Status (Startup): Automatic DISABLED.')}")
             
             # Checagem simplificada para evitar falsos negativos no painel
             ps_check = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } | Select-Object -ExpandProperty ProcessId"
             res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_check], capture_output=True, text=True, creationflags=_get_cflags())
             
             if res.stdout.strip():
-                print("🟢 Status (Memória): O motor invisível está RODANDO neste momento.")
+                print(f"🟢 {T('Status (Memory): The invisible motor is RUNNING right now.')}")
             else:
-                print("🔴 Status (Memória): O motor invisível está PARADO neste momento.")
+                print(f"🔴 {T('Status (Memory): The invisible motor is STOPPED right now.')}")
 
         elif action == "reload":
             is_enabled = os.path.exists(shortcut_path)
             
-            print("\n🔄 Recarregando o motor invisível na memória...")
+            print(f"\n🔄 {T('Reloading the invisible motor in memory...')}")
             # Mata APENAS o processo da memória, não mexe no atalho da pasta Startup!
             ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
@@ -114,7 +117,7 @@ def manage_service(action, log_file):
             subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
             
             if not is_enabled:
-                print("⚠️ O motor foi reiniciado na memória, mas a Inicialização Automática CONTINUA DESATIVADA.")
+                print(f"⚠️ {T('The motor was restarted in memory, but Automatic Startup REMAINS DISABLED.')}")
 
 def send_notification(title, message, urgency="normal"):
     if SISTEMA == "Linux":
@@ -132,8 +135,9 @@ def send_notification(title, message, urgency="normal"):
         except Exception: pass
 
 def run_doctor_os():
+    from sync_config import T 
     if SISTEMA == "Linux":
-        if shutil.which("systemctl"): print("🟢 Systemd: Suportado.")
-        else: print("🔴 Systemd: Ausente.")
+        if shutil.which("systemctl"): print(f"🟢 Systemd: {T('Supported.')}")
+        else: print(f"🔴 Systemd: {T('Missing.')}")
     elif SISTEMA == "Windows":
-        print("🟢 Windows Startup Folder: Suportado.")
+        print(f"🟢 Windows Startup Folder: {T('Supported.')}")

@@ -1,10 +1,12 @@
 import os
+import sys
 import json
 import logging
 import re
+import locale
 from logging.handlers import RotatingFileHandler
 
-VERSION = "7.1"
+VERSION = "7.2"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.expanduser("~/.config/sync_engine")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -12,7 +14,36 @@ LOG_FILE = os.path.join(CONFIG_DIR, "sync.log")
 
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
-# Configuração unificada do Logger
+# ==========================================
+# i18n (INTERNATIONALIZATION) SETUP
+# ==========================================
+try:
+    # Detecta o idioma do sistema (ex: 'pt_BR', 'es_MX')
+    sys_lang = locale.getdefaultlocale()[0]
+except Exception:
+    sys_lang = "en_US"
+
+locale_file = os.path.join(BASE_DIR, "locales", f"{sys_lang}.json")
+
+# Fallback Inteligente: Se não achar 'es_MX.json', tenta o genérico 'es.json'
+if not os.path.exists(locale_file) and sys_lang and "_" in sys_lang:
+    base_lang = sys_lang.split("_")[0]
+    locale_file = os.path.join(BASE_DIR, "locales", f"{base_lang}.json")
+
+translations = {}
+if os.path.exists(locale_file):
+    try:
+        with open(locale_file, "r", encoding="utf-8") as f:
+            translations = json.load(f)
+    except Exception:
+        pass
+
+def T(text):
+    """Traduz o texto com base no dicionário JSON local carregado."""
+    return translations.get(text, text)
+# ==========================================
+# LOGGING & CONFIGURATION
+# ==========================================
 logger = logging.getLogger("SyncEngine")
 logger.setLevel(logging.INFO)
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
@@ -32,7 +63,7 @@ DEFAULT_CONFIG = {
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        save_config(DEFAULT_CONFIG, "Criação do arquivo padrão")
+        save_config(DEFAULT_CONFIG, T("Default file created"))
         return DEFAULT_CONFIG
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -41,14 +72,14 @@ def load_config():
                 cfg["AUTO_CHECK_NAMES"] = True
             return cfg
     except json.JSONDecodeError:
-        logger.error("Falha ao ler config.json. Usando padrões.")
+        logger.error(T("Failed to read config.json. Using defaults."))
         return DEFAULT_CONFIG
 
 def save_config(config_data, action_msg=""):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=4)
     if action_msg:
-        logger.info(f"Configuração Alterada: {action_msg}")
+        logger.info(f"{T('Configuration changed:')} {action_msg}")
 
 def get_report_dir(config):
     custom_dir = config.get("REPORT_DIR", "").strip()

@@ -5,7 +5,7 @@ import json
 import fnmatch
 import time
 import re
-from sync_config import logger, clean_log_file
+from sync_config import logger, clean_log_file, T
 
 def init_db(db_path):
     conn = sqlite3.connect(db_path)
@@ -56,8 +56,8 @@ def scan_remote(conn, remote_name, ignore_patterns):
     
     if result.returncode != 0:
         erro_real = result.stderr.strip()
-        logger.error(f"Falha ao ler a nuvem ({remote_name}): {erro_real}")
-        raise RuntimeError(f"Detalhes do Rclone:\n{erro_real}")
+        logger.error(f"{T('Failed to read cloud')} ({remote_name}): {erro_real}")
+        raise RuntimeError(f"{T('Rclone details:')}\n{erro_real}")
 
     if result.stdout.strip():
         for item in json.loads(result.stdout):
@@ -88,5 +88,5 @@ def analyze_sync_logic(log_text):
     if "resync is required" in log_text.lower() or "resyncing" in log_text.lower():
         has_changes = True
     errors = [line for line in log_text.split('\n') if "ERROR" in line]
-    err_msg = errors[0].split("ERROR :")[-1].strip() if errors else "Verifique o log."
+    err_msg = errors[0].split("ERROR :")[-1].strip() if errors else T("Check the log.")
     return has_changes, err_msg
