@@ -289,9 +289,17 @@ def run_dry_run():
             generate_filters(db_connection, filter_file, acc.get("IGNORE_PATTERNS", []))
             db_connection.close()
 
-            cmd = ["rclone", "bisync", local_dir, f"{acc['REMOTE_NAME']}:", f"--filter-from={filter_file}", "--create-empty-src-dirs", "--fix-case", "-v", "--dry-run"]
+            cmd = ["rclone", "bisync", local_dir, f"{acc['REMOTE_NAME']}:", f"--filter-from={filter_file}", "--create-empty-src-dirs", "--fix-case", "-v", "--dry-run", "--color=never"]
+            max_size = acc.get("MAX_SIZE", "0")
+            if max_size != "0": 
+                cmd.append(f"--max-size={max_size}")
+
+            bw_limit = config.get("BW_LIMIT", "0")
+            if bw_limit != "0": 
+                cmd.append(f"--bwlimit={bw_limit}")
+
             result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            
+
             if result.stderr: tee(clean_log_text(result.stderr.strip()))
             if result.stdout: tee(clean_log_text(result.stdout.strip()))
             tee("-" * 45)

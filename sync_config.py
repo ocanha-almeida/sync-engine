@@ -41,6 +41,7 @@ if os.path.exists(locale_file):
 def T(text):
     """Traduz o texto com base no dicionário JSON local carregado."""
     return translations.get(text, text)
+    
 # ==========================================
 # LOGGING & CONFIGURATION
 # ==========================================
