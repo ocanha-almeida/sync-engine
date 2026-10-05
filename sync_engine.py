@@ -452,10 +452,29 @@ def run_now():
     ACCOUNTS = config.get("ACCOUNTS", [])
     if not ACCOUNTS: print(f"\n{T('No account configured.')}"); pause(); return
 
+    # --- NOVO BLOCO: SELEÇÃO DE CONTA ---
+    print(T("\nChoose the account to Sync:"))
+    print(T(" [0] All accounts (Batch)"))
+    for i, acc in enumerate(ACCOUNTS):
+        print(f" [{i+1}] {acc['PROFILE_NAME']} ({acc['REMOTE_NAME']}:)")
+
+    op = input(T("\nOption [Enter to cancel]: ")).strip()
+    if op == '' or op.lower() == 'c': return
+
+    contas_alvo = []
+    if op == '0':
+        contas_alvo = ACCOUNTS
+    elif op.isdigit() and 1 <= int(op) <= len(ACCOUNTS):
+        contas_alvo = [ACCOUNTS[int(op)-1]]
+    else:
+        return
+    # ------------------------------------
+
     report_dir = os.path.normpath(get_report_dir(config))
     sync_realizada = False
 
-    for acc in ACCOUNTS:
+    # ATENÇÃO: O loop de varredura agora aponta para contas_alvo
+    for acc in contas_alvo:
         print(f"\n🔄 {T('Current account:')} {acc['PROFILE_NAME']}")
         local_dir = os.path.expanduser(acc["LOCAL_DIR"])
         os.makedirs(local_dir, exist_ok=True)
@@ -557,9 +576,13 @@ def run_update():
         print(T("❌ Could not identify the version on the server.")); pause(); return
 
     print(f"{T('Remote version:')} {remote_version}\n")
-    if remote_version == VERSION:
-        print(T("✅ You are already using the latest version!")); pause(); return
-        
+
+    def parse_version(v):
+        return tuple(map(int, re.findall(r'\d+', str(v))))
+
+    if parse_version(remote_version) <= parse_version(VERSION):
+        print(T("✅ You are already using the latest version!")); pause(); return        
+    
     print(T("🎉 A new version is available!"))
     resp = input(T("Do you want to download and install the update now? (Y/N) [N]: ")).strip().lower()
     if resp not in ['s', 'y']: return
@@ -934,12 +957,21 @@ def run_config_wizard():
         print(f"16. ℹ️ {T('Check Motor Status')}")
         print(f"17. 🔄 {T('Update Application Version')}")
         print(f"18. 🧨 {T('Uninstall Sync Engine')}")
-        
-        print(f"\n[Enter] {T('Exit')}\n" + "="*45)
+
+        print(f"\n[R] 📂 {T('Open Reports')}       [Enter] {T('Exit')}\n" + "="*45)
         
         escolha = input(T("Option: ")).strip()
         if escolha == '': clear_screen(); print(T("Goodbye!\n")); break
         
+        elif escolha.lower() == 'r':
+            current_dir = os.path.normpath(get_report_dir(config))
+            os.makedirs(current_dir, exist_ok=True)
+            if SISTEMA == "Windows":
+                os.startfile(current_dir)
+            else:
+                subprocess.run(["xdg-open", current_dir])
+            continue
+
         elif escolha == '1':
             clear_screen()
             print("="*45 + f"\n{T('➕ ADD NEW ACCOUNT')}\n" + "="*45)
@@ -963,10 +995,74 @@ def run_config_wizard():
             save_config(config, f"{T('Added account')} '{profile}'"); manage_service("reload", LOG_FILE); print(T("\n✅ Saved!")); pause()
 
         elif escolha == '2':
-            clear_screen()
-            print("="*45 + f"\n{T('📋 LIST CURRENT ACCOUNTS')}\n" + "="*45)
-            for i, acc in enumerate(config.get("ACCOUNTS", [])): print(f"[{i+1}] {acc['PROFILE_NAME']} ({acc['LOCAL_DIR']})")
-            pause()
+            while True:
+                clear_screen()
+                print("="*45 + f"\n{T('📋 ACCOUNT DETAILS')}\n" + "="*45)
+                contas = config.get("ACCOUNTS", [])
+                if not contas:
+                    print(T("No account configured.")); pause(); break
+                
+                for i, acc in enumerate(contas): print(f"[{i+1}] {acc['PROFILE_NAME']}")
+                op = input(T("\nChoose an account to view (Number) [Enter to return]: ")).strip()
+                
+                if not op.isdigit() or not (1 <= int(op) <= len(contas)): break
+                conta = contas[int(op)-1]
+                
+                while True:
+                    clear_screen()
+                    print("="*45 + f"\n⚙️  {T('ACCOUNT:')} {conta['PROFILE_NAME']}\n" + "="*45)
+                    print(f"☁️  {T('Cloud (Remote)')}  : {conta['REMOTE_NAME']}:")
+                    print(f"📁 {T('Local Folder')}    : {conta['LOCAL_DIR']}")
+                    print(f"📦 {T('Size Limit')}      : {conta.get('MAX_SIZE', '0')} (0 = {T('Unlimited')})")
+                    print(f"🛡️  {T('Active Filters')}  : {len(conta.get('IGNORE_PATTERNS', []))} {T('rule(s)')}")
+                    status_mount = T("ACTIVE") if conta.get("AUTO_MOUNT") else T("Inactive")
+                    print(f"🔌 {T('Virtual Drive')}   : {status_mount}")
+                    
+                    print(f"\n  [1] ✏  {T('Change Local Folder path')}")
+                    print(f"  [Enter] {T('Return')}")
+                    
+                    acao = input(T("\nAction: ")).strip()
+                    if acao == '': break
+                    elif acao == '1':
+                        novo_dir = input(T("\nEnter the new absolute path for the folder (Ex: ~/NewFolder): ")).strip()
+                        if novo_dir:
+                            dir_expandido_novo = os.path.expanduser(novo_dir)
+                            dir_expandido_velho = os.path.expanduser(conta["LOCAL_DIR"])
+                            
+                            if os.path.abspath(dir_expandido_novo) == os.path.abspath(dir_expandido_velho):
+                                print(f"\n⚠️ {T('The entered path is the same as the current configuration.')}")
+                                pause()
+                                continue
+                                
+                            print(f"\n{T('Do you want to physically MOVE all files from the old folder to the new one?')}")
+                            print(f"{T('From:')} {dir_expandido_velho}")
+                            print(f"{T('To:')} {dir_expandido_novo}")
+                            mover = input(T("(Y/N) [N]: ")).strip().lower() in ['s', 'y']
+                            
+                            try:
+                                if mover and os.path.exists(dir_expandido_velho):
+                                    print(f"\n⏳ {T('Moving files... This may take a while depending on the size.')}")
+                                    os.makedirs(dir_expandido_novo, exist_ok=True)
+                                    import shutil
+                                    
+                                    itens_movidos = 0
+                                    for item in os.listdir(dir_expandido_velho):
+                                        origem = os.path.join(dir_expandido_velho, item)
+                                        destino = os.path.join(dir_expandido_novo, item)
+                                        if not os.path.exists(destino):
+                                            shutil.move(origem, destino)
+                                            itens_movidos += 1
+                                        else:
+                                            print(f"⚠️ {T('Ignored:')} '{item}' {T('already exists in the destination.')}")
+                                    print(f"✅ {itens_movidos} {T('root item(s) moved successfully!')}")
+                                    
+                                conta["LOCAL_DIR"] = novo_dir
+                                save_config(config, f"{T('Local folder for account')} '{conta['PROFILE_NAME']}' {T('changed to')} {novo_dir}")
+                                manage_service("reload", LOG_FILE)
+                                print(f"\n✅ {T('Configuration saved! The new working folder is:')} {novo_dir}")
+                            except Exception as e:
+                                print(f"\n❌ {T('Error during move:')} {e}")
+                            pause()
                 
         elif escolha == '3':
             clear_screen()

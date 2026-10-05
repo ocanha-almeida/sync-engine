@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.2.1] - 2026-109-05
+### Added
+- Menu "📋 Listar contas atuais" permite inspecionar rapidamente como cada nuvem está parametrizada e mudar caminho da pasta local de sincronização
+- Ataho no menu principal para abrir a pasta de relatórios
+### Fixed
+- Comparação de versões local e github na atualização online
+- Padronização de menu em Sincronização Imediata e Reparo
 
 ## [7.2] - 2026-09-25
 ### Added
