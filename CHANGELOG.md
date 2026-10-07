@@ -1,8 +1,16 @@
 # Changelog
 
-## [7.2.3] - 2026-10-07
+## [7.2.3.1] - 2026-10-07
 ### Added
 - 
+### Fixed
+- Fechamento prematuro ao selecionar conta para sincronização nuvem a nuvem
+
+
+## [7.2.3] - 2026-10-07
+### Added
+- Exibe o provedor da conexão na listagem de conexões
+- Selecionar quais conexões sincronizam automaticamente em background quando serviço ligado
 ### Fixed
 - Opções de configuração em listagem de conta
 - Traduções faltantes em listagem de contas
