@@ -644,7 +644,7 @@ def run_cloud_migration():
     if not op_dst.isdigit() or not (1 <= int(op_dst) <= len(remotes)): return
     dst_remote = remotes[int(op_dst)-1]
     
-    dst_path = input(f"📁 {T('Subfolder in destination (Leave blank for root '/'):')}").strip()
+    dst_path = input("📁 " + T("Subfolder in destination (Leave blank for root '/'): ")).strip()
     dst_full = f"{dst_remote}:{dst_path}" if dst_path else f"{dst_remote}:"
     
     if src_full == dst_full:
