@@ -1,6 +1,21 @@
 # Changelog
 
-## [7.2.1] - 2026-109-05
+## [7.2.3] - 2026-10-07
+### Added
+- 
+### Fixed
+- Opções de configuração em listagem de conta
+- Traduções faltantes em listagem de contas
+- Opção de cancelar alteração de filtros
+
+
+## [7.2.2] - 2026-10-06
+### Added
+- Padronizado renderizador de menus
+### Fixed
+- Emojis não são mais enviados para tradução
+
+## [7.2.1] - 2026-10-05
 ### Added
 - Menu "📋 Listar contas atuais" permite inspecionar rapidamente como cada nuvem está parametrizada e mudar caminho da pasta local de sincronização
 - Ataho no menu principal para abrir a pasta de relatórios
