@@ -1,10 +1,21 @@
 # Changelog
 
+## [7.2.4] - 2026-10-08
+### Added
+- Agendamento de execução integrado ao sync-engine
+- Seletor de idiomas
+### Fixed
+- Função de tradução melhorada para ignorar emojis, pontuação final, e capitalização: evita duplicações nos jsons em locales
+- Atualização .gitignore 
+- Limpeza estrutural nos menus de configuração e de filtros, removendo blocos obsoletos
+
 ## [7.2.3.1] - 2026-10-07
 ### Added
 - 
 ### Fixed
 - Fechamento prematuro ao selecionar conta para sincronização nuvem a nuvem
+- Resolução do erro fatal de sintaxe (TypeError) na migração nuvem-a-nuvem
+- Validação do algoritmo matemático de atualização
 
 
 ## [7.2.3] - 2026-10-07

@@ -6,7 +6,7 @@ import re
 import locale
 from logging.handlers import RotatingFileHandler
 
-VERSION = "7.2.3.2"
+VERSION = "7.2.4"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.expanduser("~/.config/sync_engine")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -17,21 +17,32 @@ os.makedirs(CONFIG_DIR, exist_ok=True)
 # ==========================================
 # i18n (INTERNATIONALIZATION) SETUP
 # ==========================================
-try:
-    # Detecta o idioma do sistema (ex: 'pt_BR', 'es_MX')
-    sys_lang = locale.getdefaultlocale()[0]
-except Exception:
-    sys_lang = "en_US"
+user_lang = "auto"
+if os.path.exists(CONFIG_FILE):
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            _tmp_cfg = json.load(f)
+            user_lang = _tmp_cfg.get("LANGUAGE", "auto")
+    except Exception:
+        pass
+
+if user_lang == "auto":
+    try:
+        sys_lang = locale.getdefaultlocale()[0]
+    except Exception:
+        sys_lang = "en_US"
+else:
+    sys_lang = user_lang
 
 locale_file = os.path.join(BASE_DIR, "locales", f"{sys_lang}.json")
 
-# Fallback Inteligente: Se não achar 'es_MX.json', tenta o genérico 'es.json'
+# Fallback Inteligente
 if not os.path.exists(locale_file) and sys_lang and "_" in sys_lang:
     base_lang = sys_lang.split("_")[0]
     locale_file = os.path.join(BASE_DIR, "locales", f"{base_lang}.json")
 
 translations = {}
-if os.path.exists(locale_file):
+if os.path.exists(locale_file) and sys_lang != "en":
     try:
         with open(locale_file, "r", encoding="utf-8") as f:
             translations = json.load(f)
@@ -39,9 +50,52 @@ if os.path.exists(locale_file):
         pass
 
 def T(text):
-    """Traduz o texto com base no dicionário JSON local carregado."""
-    return translations.get(text, text)
+    """
+    Traduz o texto com base no dicionário JSON local carregado.
+    Suporta busca case-insensitive, preserva emojis, pontuações e mantém
+    a capitalização natural definida no JSON (ou UPPERCASE global).
+    """
+    if not text:
+        return text
+        
+    exact_match = translations.get(text)
+    if exact_match:
+        return exact_match
+        
+    core_start = 0
+    for i, char in enumerate(text):
+        if char.isalnum() or char in "[({'\"":
+            core_start = i
+            break
+    else:
+        return text
+        
+    core_end = len(text)
+    for i in range(len(text)-1, core_start-1, -1):
+        char = text[i]
+        if char.isalnum() or char in "])}'\"":
+            core_end = i + 1
+            break
+            
+    prefix = text[:core_start]
+    suffix = text[core_end:]
+    core = text[core_start:core_end]
     
+    lookup_key = core.lower()
+    translated_core = translations.get(core) or translations.get(lookup_key)
+    
+    if not translated_core:
+        return text
+        
+    # Se a chamada estiver em CAIXA ALTA completa (ex: T("ACCOUNT DETAILS")), força maiúsculas
+    if core.isupper() and len(core) > 1:
+        translated_core = translated_core.upper()
+    elif core[0].isupper() and translated_core[0].islower():
+        # Apenas garante que a primeira letra da frase acompanhe a maiúscula inicial
+        translated_core = translated_core[0].upper() + translated_core[1:]
+        
+    return f"{prefix}{translated_core}{suffix}"
+
 # ==========================================
 # LOGGING & CONFIGURATION
 # ==========================================
@@ -54,6 +108,7 @@ if not logger.handlers:
     logger.addHandler(file_handler)
 
 DEFAULT_CONFIG = {
+    "LANGUAGE": "auto",
     "SYNC_INTERVAL": 300,
     "BW_LIMIT": "0",
     "MAX_SIZE": "0",

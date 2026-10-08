@@ -2,15 +2,16 @@
   <span>🇺🇸 English</span> | <a href="README-pt.md">🇧🇷 Português</a>
 </div>
 
-# 🔄 Sync Engine - Multi-Account Rclone Manager (v7.2)
+# 🔄 Sync Engine - Multi-Account Rclone Manager (v7.2.4)
 
 An intelligent, interactive, and secure bidirectional cloud sync engine built on top of the powerful `rclone bisync`. Designed for Linux and Windows, it transforms Rclone's complexity into a seamless experience through a comprehensive CLI wizard.
 
 Born from the need to overcome the limitations of traditional cloud clients, this project heavily focuses on automatic background synchronization, native protection against accidental deletions, strict bandwidth/size limits, and surgical bidirectional folder blocking.
 
-## ✨ Key Features (Updated v7.2)
+## ✨ Key Features (Updated v7.2.4)
 
-*   **Native Internationalization (i18n):** The engine now automatically detects your operating system's language and dynamically translates the entire CLI interface and generated reports. Currently natively supported in **English**, **Portuguese**, **Spanish**, **French**, **German**, and **Simplified Chinese**.
+*   **Native Internationalization (i18n):** The engine now automatically detects your operating system's language and dynamically translates the entire CLI interface and generated reports. Currently natively supported in **English**, **Portuguese**, **Spanish**, **French**, **German**, **Italian**, **Japanese**, and **Simplified Chinese**, with a dynamic Language Selector built right into the Global Settings.
+*   **Built-in Task Scheduler (Cron):** Schedule background syncs (Normal or Forced) and Cloud-to-Cloud Migrations for specific times and dates, all managed directly within the interactive wizard without needing external OS task schedulers.
 *   **Cloud-to-Cloud Migration:** Transfer files directly between distinct providers (e.g., OneDrive to Google Drive) using your system's RAM, preserving local disk space and intelligently ignoring blocked folders (`.nosync`).
 *   **Virtual Drive Mount:** Turn any cloud into a "virtual flash drive" seamlessly integrated into your OS (Native Systemd support on Linux and Network Drive on Windows).
 *   **Granular Account Configuration:** Exclusion rules and maximum file size limits (`MAX_SIZE`) are now defined individually for each connected cloud.
@@ -19,7 +20,7 @@ Born from the need to overcome the limitations of traditional cloud clients, thi
 *   **Isolated & Standardized Reports:** All history logs are generated with timestamps in the header and isolated by account in your chosen folder.
 *   **Native Filename Cleaner (`clean`):** Scans your local folders for special characters that cause cloud upload errors, shows a safe preview, and generates a detailed report.
 *   **Auto-Healing & Auto-Unlocker:** The script detects critical API failures and stuck lock files, automatically breaking the locks and performing deep resyncs (`--resync`) to recover.
-*   **Safe Auto-Uninstall:** The engine now has a clean self-destruct routine (Option 18) protected by a text challenge (CAPTCHA).
+*   **Safe Auto-Uninstall:** The engine now has a clean self-destruct routine protected by a text challenge (CAPTCHA).
 *   **Background Service:** Runs silently at the user level, allowing auto-start without requiring administrative privileges for daily tasks.
 
 ---
@@ -42,7 +43,7 @@ You must manually download and install these tools before running the installer.
 1.  **Python 3:** [Download Windows Installer](https://www.python.org/downloads/windows/)
 2.  **Rclone:** [Download Rclone](https://rclone.org/downloads/) *(Extract the `.exe` and place it in a folder in your PATH, e.g., `C:\Windows`)*
 3.  **SQLite3:** [Download SQLite Tools](https://www.sqlite.org/download.html) *(Extract the `.exe` and place it in your PATH)*
-4.  **WinFsp:** [Download WinFsp](https://winfsp.dev/) *(Required **ONLY** if you plan to use the Virtual Drive Mount feature - Menu Option 13).*
+4.  **WinFsp:** [Download WinFsp](https://winfsp.dev/) *(Required **ONLY** if you plan to use the Virtual Drive Mount feature).*
 
 ### Step-by-Step Installation
 
@@ -85,19 +86,20 @@ Sync Engine can be operated via the interactive wizard or direct terminal shortc
 
 ## 🛠️ Interactive Wizard Guide (`sync-engine config`)
 
-The interactive menu has been expanded to support granular management:
+The interactive menu is fully categorized to support granular management:
 
-1. **Account Configuration (Options 1 to 3):** Add, list, or remove local folder links to your clouds. Removing an account triggers intelligent garbage collection.
-2. **Global Settings (Option 4):** Change sync intervals, global bandwidth limits (`BW_LIMIT`), set the absolute folder path for saved reports, and toggle case-sensitivity blocking.
-3. **Account Filters & Limits (Option 5):** Choose a specific account to assign custom max size limits and manage its exclusion list.
-4. **Extra Actions & Reports (Options 6 to 13):** Shortcuts for immediate execution (`now`), simulation (`test`), large file reports, cleaner, error analyzer, system doctor, **Cloud-to-Cloud Migration**, and **Virtual Drive Mount**.
-5. **Engine Control (Options 14 to 18):** Friendly interface to start, stop, check status, update, or trigger the system-wide **Auto-Uninstall**.
+1. **Account Configuration:** Add, list, edit, or remove local folder links to your clouds. Each account has its own panel to manage specific maximum size limits, exclusion patterns, and active mounts.
+2. **Global Settings:** Change system language, global sync intervals, bandwidth limits (`BW_LIMIT`), set the absolute folder path for saved reports, and toggle case-sensitivity blocking.
+3. **Synchronization:** Shortcuts for immediate execution (`now`), simulation (`test`), and the **Task Scheduler (Cron)** to automate jobs for specific dates and times.
+4. **Maintenance:** Access Large File Reports, the Filename Cleaner, the Sync Error Analyzer, and the System Doctor.
+5. **Extra Actions:** Configure **Cloud-to-Cloud Migrations** and **Virtual Drive Mounts**.
+6. **Background Motor:** Friendly interface to start, stop, check status, update the application, or trigger the system-wide **Auto-Uninstall**.
 
 ---
 
 ## 🎯 Filters and Exclusions Guide
 
-To prevent the synchronization of unwanted folders or files, use the following syntaxes when adding a filter via **Option 5**:
+To prevent the synchronization of unwanted folders or files, use the following syntaxes when adding a filter to an account:
 
 *   **Case Insensitive:** `(?i)*.tmp` *(Ignores both `log.tmp` and `LOG.TMP` on any OS).*
 *   **Exact Match:** `venv` or `.git`
@@ -121,7 +123,7 @@ To turn your PC into a true "server":
 
 To completely remove Sync Engine from your system (clearing the root executable, system shortcuts, and turning off background services):
 1. Open your terminal and type `sync-engine config`
-2. Select **Option 18 (Uninstall Sync Engine)**
+2. Select **Uninstall Sync Engine** from the Background Motor section.
 3. The system will prompt you with a random text challenge (CAPTCHA) to confirm the deletion.
 4. You will be asked if you want to keep or permanently delete your configuration history and old reports.
-5. The software will safely self-destruct in 3 seconds.
+5. The software will safely self-destruct.

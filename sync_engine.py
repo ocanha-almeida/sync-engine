@@ -18,11 +18,11 @@ import string
 # ==========================================
 # ÂNCORA E IMPORTAÇÃO DOS MÓDULOS
 # ==========================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 os.chdir(BASE_DIR)
 sys.path.append(BASE_DIR)
 
-from sync_config import load_config, save_config, get_report_dir, VERSION, CONFIG_DIR, LOG_FILE, logger, clean_log_file, clean_log_text, T
+from sync_config import load_config, save_config, get_report_dir, VERSION, CONFIG_DIR, LOG_FILE, logger, clean_log_file, clean_log_text, T, BASE_DIR as CONFIG_BASE_DIR
 from sync_os import manage_service, send_notification, run_doctor_os, SISTEMA
 from sync_core import init_db, scan_local, scan_remote, generate_filters, analyze_sync_logic
 
@@ -212,7 +212,7 @@ def executar_cleaner(alvo, ignore_patterns, safe_name):
     report_dir = os.path.normpath(get_report_dir(config))
     report_file = os.path.normpath(os.path.join(report_dir, f"{safe_name}_ultimo_relatorio_higienizador.txt"))
     # ... Continue com o bloco do with open() e os renames ...
-    print(f"\n📂 Relatório salvo."); pause() # Apenas ilustrativo, cole seu bloco original!
+    print(f"\n📂 {T('Report saved.')}"); pause() # Apenas ilustrativo, cole seu bloco original!
 
 
 def run_mount_manager():
@@ -1092,6 +1092,7 @@ def cmd_global_settings():
     while True:
         config = load_config()
         mn = []
+        mn.append([f"🌐 {T('Language')} ({config.get('LANGUAGE', 'auto')})", cmd_language_menu])
         mn.append([f"⏱️  {T('Interval')} ({config.get('SYNC_INTERVAL', 300)}s)", acao_mudar_intervalo])
         mn.append([f"📶 {T('Bandwidth Limit')} ({config.get('BW_LIMIT', '0')})", acao_mudar_banda])
         mn.append([f"📂 {T('Reports Folder')} ({T('Current:')} {os.path.normpath(get_report_dir(config))})", cmd_menu_relatorios])
@@ -1100,6 +1101,46 @@ def cmd_global_settings():
         
         if not construir_menu(T("Edit Interval, Bandwidth, Folders, and Collisions"), mn):
             break
+
+
+def cmd_language_menu():
+    while True:
+        config = load_config()
+
+        # Usa a raiz EXATA garantida pelo sync_config
+        locales_dir = os.path.join(CONFIG_BASE_DIR, "locales")
+
+        # Cria a pasta locales automaticamente se ela não existir
+        os.makedirs(locales_dir, exist_ok=True)
+
+        disponiveis = []
+        for f in os.listdir(locales_dir):
+            if f.endswith(".json") and f not in ["dicionario_base.json", "config.json"]:
+                disponiveis.append(f.replace(".json", ""))
+
+        disponiveis.sort()
+
+        mn = []
+        mn.append([f"🤖 {T('Auto (System Default)')}", lambda: acao_mudar_idioma("auto")])
+        mn.append([f"🇺🇸 {T('English (Base Code)')}", lambda: acao_mudar_idioma("en")])
+        mn.append([])  # Linha em branco para separar
+
+        if not disponiveis:
+            # Agora o erro mostra EXATAMENTE o caminho físico que ele tentou ler
+            mn.append([f"⚠️  {T('No extra languages found in')} {locales_dir}", None])
+        else:
+            for lang in disponiveis:
+                mn.append([f"🌐 {lang.upper()}", lambda l=lang: acao_mudar_idioma(l)])
+
+        if not construir_menu(T("Select Language"), mn):
+            break
+def acao_mudar_idioma(lang_code):
+    config = load_config()
+    config["LANGUAGE"] = lang_code
+    save_config(config, f"Language set to {lang_code}")
+    print(f"\n✅ {T('Language changed to:')} {lang_code.upper()}")
+    print(T("Please restart the application to apply the new language."))
+    pause()
 
 def acao_mudar_intervalo():
     nv = input(T("\nNew interval in seconds: ")).strip()
@@ -1152,6 +1193,171 @@ def acao_restaurar_relatorios():
     print(f"\n✅ {T('Reports restored to default directory')}")
     pause()
 
+def cmd_scheduler_menu():
+    while True:
+        config = load_config()
+        tasks = config.get("SCHEDULED_TASKS", [])
+        
+        mn = []
+        # Aviso fixo sobre a necessidade do motor
+        mn.append(f"⚠️  {T('NOTE: Scheduled tasks only run if the Background Motor is ACTIVE.')}")
+        mn.append([])
+        mn.append([f"➕ {T('Add new scheduled task')}", acao_add_task])
+        mn.append([])
+        
+        if not tasks:
+            mn.append([f"   ({T('No scheduled tasks')})", None])
+        else:
+            # Instrução clara sobre o clique apagar a tarefa
+            mn.append(T("Select a task below to REMOVE it:"))
+            for i, t in enumerate(tasks):
+                tipo = t['type'].upper()
+                label = t.get('label', '')
+                data_str = T('Daily') if t.get('date', 'daily') == 'daily' else t.get('date')
+                ultimo = t.get('last_run', T('Never'))
+                mn.append([f"❌ {T('Delete')} -> {data_str} {t['time']} | {tipo} | {label} (Ult: {ultimo})", lambda idx=i: acao_rem_task(idx)])
+                
+        if not construir_menu(f"⏰ {T('TASK SCHEDULER')}", mn):
+            break
+
+def acao_add_task():
+    clear_screen()
+    config = load_config()
+    print("="*45 + f"\n➕ {T('NEW SCHEDULED TASK')}\n" + "="*45)
+    
+    print("1. " + T("Normal Sync (Safe)"))
+    print("2. " + T("FORCED Sync (--force)"))
+    print("3. " + T("Cloud-to-Cloud Migration"))
+    
+    op = input("\n" + T("Task Type (1-3) [Enter to cancel]: ")).strip()
+    if op not in ['1', '2', '3']: return
+    
+    task = {"last_run": ""}
+    
+    if op in ['1', '2']:
+        contas = config.get("ACCOUNTS", [])
+        if not contas: print(f"❌ {T('No account configured.')}"); pause(); return
+        for i, acc in enumerate(contas): print(f"  [{i+1}] {acc['PROFILE_NAME']}")
+        idx = input("\n" + T("Account Number [Enter to cancel]: ")).strip()
+        if not idx.isdigit() or not (1 <= int(idx) <= len(contas)): return
+        
+        task["type"] = "sync" if op == '1' else "force"
+        task["account"] = contas[int(idx)-1]["PROFILE_NAME"]
+        task["label"] = task["account"]
+        
+    elif op == '3':
+        print(T("\nEx: gdrive:/Backups"))
+        src = input(T("Source path [Enter to cancel]: ")).strip()
+        if not src: return
+        dst = input(T("Destination path [Enter to cancel]: ")).strip()
+        if not dst: return
+        
+        task["type"] = "migration"
+        task["src"] = src
+        task["dst"] = dst
+        task["label"] = f"{src.split(':')[0]} -> {dst.split(':')[0]}"
+        
+    # Pergunta a data (Se der enter em branco, fica "daily")
+    data_op = input("\n" + T("Date (DD/MM/YYYY) or [Enter for Daily]: ")).strip()
+    if data_op:
+        if not re.match(r"^(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[0-2])/\d{4}$", data_op):
+            print(f"❌ {T('Invalid date format. Use DD/MM/YYYY.')}"); pause(); return
+        task["date"] = data_op
+    else:
+        task["date"] = "daily"
+
+    hora = input(T("Execution Time (HH:MM) [ex: 02:30]: ")).strip()
+    if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", hora):
+        print(f"❌ {T('Invalid time format. Use HH:MM.')}"); pause(); return
+        
+    task["time"] = hora
+    config.setdefault("SCHEDULED_TASKS", []).append(task)
+    save_config(config, f"New scheduled task: {task['type']} para {task['date']} às {hora}")
+    manage_service("reload", LOG_FILE)
+    print(f"\n✅ {T('Task Scheduled!')}")
+    print(f"💡 {T('Tip: Remember to turn ON the Background Motor in the main menu so your tasks can run.')}")
+    pause()
+
+def process_scheduled_tasks(config):
+    tasks = config.get("SCHEDULED_TASKS", [])
+    if not tasks: return
+
+    agora = datetime.now()
+    hora_atual = agora.strftime("%H:%M")
+    data_atual = agora.strftime("%Y-%m-%d")
+    data_br = agora.strftime("%d/%m/%Y")
+    mudou = False
+    report_dir = os.path.normpath(get_report_dir(config))
+
+    tarefas_restantes = []
+
+    for task in tasks:
+        t_date = task.get("date", "daily")
+        
+        # Limpa tarefas de dias passados que o motor estava desligado e não rodou
+        if t_date != "daily" and t_date != data_br:
+            try:
+                d_task = datetime.strptime(t_date, "%d/%m/%Y").date()
+                if d_task < agora.date():
+                    mudou = True
+                    continue 
+            except: pass
+            
+            # Se a tarefa é para um dia futuro, guarda e pula
+            if t_date != data_br:
+                tarefas_restantes.append(task)
+                continue
+
+        # Se já rodou hoje ou a hora não chegou
+        if task.get("last_run") == data_atual or hora_atual < task["time"]: 
+            tarefas_restantes.append(task)
+            continue
+
+        logger.info(f"⏰ {T('Starting scheduled task:')} {task['type']} ({task.get('label', '')})")
+        
+        try:
+            if task["type"] in ["sync", "force"]:
+                acc = next((a for a in config.get("ACCOUNTS", []) if a["PROFILE_NAME"] == task["account"]), None)
+                if acc:
+                    local_dir = os.path.expanduser(acc["LOCAL_DIR"])
+                    safe_name = "".join([c for c in acc['PROFILE_NAME'].lower().replace(" ", "_") if c.isalnum() or c=='_'])
+                    log_file = os.path.join(report_dir, f"{safe_name}_agendamento.txt")
+                    filter_file = os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
+                    
+                    cmd = ["rclone", "bisync", local_dir, f"{acc['REMOTE_NAME']}:", f"--filter-from={filter_file}", "--create-empty-src-dirs", "--fix-case", "-v", f"--log-file={log_file}"]
+                    if task["type"] == "force": cmd.append("--force")
+                    if acc.get("MAX_SIZE", "0") != "0": cmd.append(f"--max-size={acc.get('MAX_SIZE')}")
+                    
+                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    send_notification(T("Scheduled Sync"), f"{acc['PROFILE_NAME']} {T('completed.')}")
+
+            elif task["type"] == "migration":
+                agora_arquivo = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                log_file = os.path.join(report_dir, f"migracao_agendada_{agora_arquivo}.txt")
+                cmd = ["rclone", "copy", task["src"], task["dst"], "-v", "--ignore-errors", f"--log-file={log_file}"]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                send_notification(T("Scheduled Migration"), f"{task['label']} {T('completed.')}")
+                
+        except Exception as e:
+            logger.error(f"{T('Scheduled task failure:')} {e}")
+            
+        task["last_run"] = data_atual
+        mudou = True
+        
+        # Se for tarefa DIÁRIA, ela fica na lista. Se for de data específica, ela já some sozinha do painel.
+        if t_date == "daily":
+            tarefas_restantes.append(task)
+
+    if mudou:
+        config["SCHEDULED_TASKS"] = tarefas_restantes
+        save_config(config)
+
+def acao_rem_task(idx):
+    config = load_config()
+    apagada = config["SCHEDULED_TASKS"].pop(idx)
+    save_config(config, f"Scheduled task removed: {apagada.get('label')}")
+    manage_service("reload", LOG_FILE)
+
 def run_config_wizard():
     while True:
         mn = []
@@ -1167,6 +1373,7 @@ def run_config_wizard():
         mn.append(f"--- {T('Synchronization')} ---")
         mn.append([f"🧪 {T('Test-Drive / Simulation (Dry-Run)')}", run_dry_run])
         mn.append([f"🚀 {T('Force Sync Now')}", run_now])
+        mn.append([f"{T('⏰ Task Scheduler (Cron)')}", cmd_scheduler_menu])
         
         mn.append(f"--- {T('Maintenance')} ---")
         mn.append([f"📊 {T('Report of Files Over the Limit')}", run_size_report])
@@ -1334,6 +1541,7 @@ if __name__ == "__main__":
                 else:
                     logger.info(f"[{profile}] {T('Check complete. No changes detected.')}")
             
+            process_scheduled_tasks(config) # <--- Checa o relógio e executa agendamentos pendentes
             time.sleep(config.get("SYNC_INTERVAL", 300))
     except Exception as e:
         logger.error(f"{T('CRITICAL MOTOR FAILURE:')} {e}")

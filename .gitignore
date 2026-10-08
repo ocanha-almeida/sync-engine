@@ -217,16 +217,26 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Arquivos de log e relatorios do Sync Engine
-*.log
-ultimo_dry_run.txt
-ultimo_relatorio_tamanho.txt
-ultima_sincronizacao_manual.txt
+# PyCharm / IDE locais
+.idea/
 
-# Bancos de dados SQLite
+# Arquivos de log e relatórios do Sync Engine
+*.log
+*_ultimo_*.txt
+*_ultima_sincronizacao_manual.txt
+migracao_*.txt
+*_agendamento.txt
+
+# Relatórios de auditoria e utilitários
+auditoria_*.txt
+linhas_sem_traducao.txt
+utilitários/
+
+# Bancos de dados SQLite e Filtros dinâmicos
 *.db
 *.sqlite3
+excludes_*.txt
 
-# Pastas de ambiente virtual (caso use no futuro)
+# Pastas de ambiente virtual
 venv/
 .venv/
