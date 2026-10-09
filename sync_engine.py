@@ -799,32 +799,33 @@ def run_doctor(config):
     print("="*45)
     input(T("\nPress Enter to return..."))
 
+
 def run_uninstall():
     clear_screen()
-    print("="*45 + f"\n🧨 {T('SYNC ENGINE UNINSTALLATION')}\n" + "="*45)
+    print("=" * 45 + f"\n🧨 {T('SYNC ENGINE UNINSTALLATION')}\n" + "=" * 45)
     print(T("This action will stop the services and permanently"))
     print(T("remove the application from your system."))
-    
+
     desafio = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     print(T("\nTo confirm, type exactly the code below:"))
     print(f"👉 {T('Code:')} {desafio}")
-    
+
     confirma = input(T("\nYour answer [Enter to cancel]: ")).strip()
     if confirma != desafio:
         print(f"\n❌ {T('Incorrect code. Operation canceled.')}")
         pause()
         return
-        
-    print("\n" + "-"*45)
+
+    print("\n" + "-" * 45)
     print(T("Do you also want to delete settings, databases"))
     print(T("and saved reports?"))
     apagar_dados = input(T("(Y/N) [N]: ")).strip().lower() in ['s', 'y']
-    
+
     print(f"\n⏳ {T('Stopping invisible service...')}")
     manage_service("stop", LOG_FILE)
-    
+
     print(f"⏳ {T('Preparing self-destruct script...')}")
-    
+
     if SISTEMA == "Windows":
         bat_path = os.path.join(tempfile.gettempdir(), "sync_suicide.bat")
         bat_content = f"""@echo off
@@ -834,12 +835,12 @@ rmdir /s /q "{BASE_DIR}"
         if apagar_dados:
             bat_content += f'\nrmdir /s /q "{CONFIG_DIR}"'
         bat_content += '\ndel "%~f0"'
-        
+
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(bat_content)
-            
+
         subprocess.Popen(["cmd.exe", "/c", bat_path], creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000))
-        
+
     else:
         sh_path = os.path.join(tempfile.gettempdir(), "sync_suicide.sh")
         sh_content = f"""#!/bin/bash
@@ -848,46 +849,67 @@ rm -rf "{BASE_DIR}"
 """
         if apagar_dados:
             sh_content += f'\nrm -rf "{CONFIG_DIR}"'
-            
+
         sh_content += f'\nrm -f "$HOME/.local/bin/sync-engine"'
         sh_content += f'\nrm -f "$HOME/.config/systemd/user/sync-engine.service"'
         sh_content += f'\nsystemctl --user daemon-reload'
         sh_content += '\nrm -- "$0"'
-        
+
         with open(sh_path, "w", encoding="utf-8") as f:
             f.write(sh_content)
         os.chmod(sh_path, 0o777)
-        
-        subprocess.Popen(["nohup", "bash", sh_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
-        
+
+        subprocess.Popen(["nohup", "bash", sh_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         preexec_fn=os.setpgrp)
+
     print(f"\n✅ {T('Uninstallation triggered successfully!')}")
     print(T("The engine will be removed from the drive in 3 seconds."))
+    print("-" * 45)
+    print(f"💡 {T('Note: External dependencies like ')}rclone{T(' were not removed')}")
+    print(f"   {T('as they might be used by other applications.')}")
+    print(f"   {T('If you installed it exclusively for Sync Engine,')}")
+    print(f"   {T('you can now uninstall it manually to clean up your system.')}")
+    print("-" * 45)
     print(T("Goodbye!\n"))
     sys.exit(0)
 
 def cmd_add_account():
     clear_screen()
     config = load_config()
-    print("="*45 + f"\n➕ {T('ADD NEW ACCOUNT')}\n" + "="*45)
+    print("=" * 45 + f"\n➕ {T('ADD NEW ACCOUNT')}\n" + "=" * 45)
     profile = input(T("\nProfile Name [Enter to return]: ")).strip()
     if not profile: return
-    rclone_out = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    rclone_out = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8",
+                                errors="replace")
     remotes = [r.strip(':') for r in rclone_out.stdout.strip().split('\n') if r.strip()]
-    for i, r in enumerate(remotes): print(f"  [{i+1}] {r}")
+    for i, r in enumerate(remotes): print(f"  [{i + 1}] {r}")
     op_remote = input(T("\nCloud number [Enter to return]: ")).strip()
-    if not op_remote or not op_remote.isdigit() or int(op_remote)-1 >= len(remotes): return
-    
+    if not op_remote or not op_remote.isdigit() or int(op_remote) - 1 >= len(remotes): return
+
     remote = remotes[int(op_remote) - 1]
     local = input(f"\n{T('Local folder (Enter for')} '~/{remote}'): ").strip() or f"~/{remote}"
-        
-    safe_name = "".join([c for c in profile.lower().replace(" ", "_") if c.isalnum() or c=='_'])
+
+    safe_name = "".join([c for c in profile.lower().replace(" ", "_") if c.isalnum() or c == '_'])
+
+    # Lista de filtros atualizada com as suas requisições e novas sugestões protetivas
+    filtros_padrao = [
+        "venv", ".venv", "__pycache__", ".git", "Personal Vault", "Cofre Pessoal",
+        "*.tmp", ".DS_Store", "site-packages", "Thumbs.db", "~$*",
+        "*.trashinfo", ".Trash", "desktop.ini", ".~lock.*", "*.crdownload", "*.part", "node_modules", "$RECYCLE.BIN"
+    ]
+
     config.setdefault("ACCOUNTS", []).append({
         "PROFILE_NAME": profile, "REMOTE_NAME": remote, "LOCAL_DIR": local,
-        "IGNORE_PATTERNS": ["venv", ".venv", "__pycache__", ".git", "Personal Vault", "Cofre Pessoal", "*.tmp", ".DS_Store", "site-packages", "Thumbs.db", "~$*"],
+        "IGNORE_PATTERNS": filtros_padrao,
         "DB_FILE": f"sync_metadata_{safe_name}.db", "FILTER_FILE": f"excludes_{safe_name}.txt"
     })
+
     save_config(config, f"{T('Added account')} '{profile}'")
-    manage_service("reload", LOG_FILE); print(f"\n✅ {T('Saved!')}"); pause()
+    manage_service("reload", LOG_FILE)
+
+    # Substituímos a pausa e a volta ao menu anterior pelo redirecionamento imediato
+    idx_nova_conta = len(config["ACCOUNTS"]) - 1
+    cmd_detalhes_conta(idx_nova_conta)
 
 def cmd_remove_account():
     while True:
@@ -1244,18 +1266,54 @@ def acao_add_task():
         task["type"] = "sync" if op == '1' else "force"
         task["account"] = contas[int(idx)-1]["PROFILE_NAME"]
         task["label"] = task["account"]
-        
+
     elif op == '3':
-        print(T("\nEx: gdrive:/Backups"))
-        src = input(T("Source path [Enter to cancel]: ")).strip()
-        if not src: return
-        dst = input(T("Destination path [Enter to cancel]: ")).strip()
-        if not dst: return
-        
+        res = subprocess.run(["rclone", "listremotes"], capture_output=True, text=True, encoding="utf-8",
+                             errors="replace")
+        remotes = [r.strip(':') for r in res.stdout.strip().split('\n') if r.strip()]
+        if len(remotes) < 2:
+            print(f"❌ {T('You need at least 2 clouds configured in Rclone to migrate.')}")
+            pause();
+            return
+
+        print(T("\nAvailable Providers:"))
+        for i, r in enumerate(remotes): print(f"  [{i + 1}] {r}")
+
+        op_src = input(T("\nSOURCE Cloud (Number) [Enter to cancel]: ")).strip()
+        if not op_src.isdigit() or not (1 <= int(op_src) <= len(remotes)): return
+        src_remote = remotes[int(op_src) - 1]
+
+        src_path = input("📁 " + T("Subfolder in source (Leave blank for root '/'): ")).strip()
+        src_full = f"{src_remote}:{src_path}" if src_path else f"{src_remote}:"
+
+        op_dst = input(T("\nDESTINATION Cloud (Number) [Enter to cancel]: ")).strip()
+        if not op_dst.isdigit() or not (1 <= int(op_dst) <= len(remotes)): return
+        dst_remote = remotes[int(op_dst) - 1]
+
+        dst_path = input("📁 " + T("Subfolder in destination (Leave blank for root '/'): ")).strip()
+        dst_full = f"{dst_remote}:{dst_path}" if dst_path else f"{dst_remote}:"
+
+        if src_full == dst_full:
+            print(f"❌ {T('Source and Destination cannot be the same path.')}");
+            pause();
+            return
+
+        print(T("\nTransfer Mode:"))
+        print(f"📦 {T('[1] TOTAL (Copies ABSOLUTELY EVERYTHING)')}")
+        print(f"🛡 {T('[2] STANDARD (Blocks vaults, trash and folders with .nosync marker)')}")
+        print(f"⚙ {T('[3] CUSTOM (Standard + Imports config.json filters from source)')}")
+
+        modo = input(T("\nOption (1-3) [Enter to cancel]: ")).strip()
+        if modo not in ['1', '2', '3']: return
+
+        tamanho = input(T("\nMax size per file (Ex: 1G, 500M, 0 = Unlimited) [0]: ")).strip()
+
         task["type"] = "migration"
-        task["src"] = src
-        task["dst"] = dst
-        task["label"] = f"{src.split(':')[0]} -> {dst.split(':')[0]}"
+        task["src"] = src_full
+        task["dst"] = dst_full
+        task["mode"] = modo
+        task["max_size"] = tamanho
+        task["label"] = f"{src_full} -> {dst_full}"
         
     # Pergunta a data (Se der enter em branco, fica "daily")
     data_op = input("\n" + T("Date (DD/MM/YYYY) or [Enter for Daily]: ")).strip()
@@ -1331,13 +1389,51 @@ def process_scheduled_tasks(config):
                     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     send_notification(T("Scheduled Sync"), f"{acc['PROFILE_NAME']} {T('completed.')}")
 
+
             elif task["type"] == "migration":
                 agora_arquivo = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 log_file = os.path.join(report_dir, f"migracao_agendada_{agora_arquivo}.txt")
                 cmd = ["rclone", "copy", task["src"], task["dst"], "-v", "--ignore-errors", f"--log-file={log_file}"]
+                # Aplica Limite de Tamanho
+                tamanho = task.get("max_size", "0")
+                if tamanho and tamanho != "0":
+                    cmd.append(f"--max-size={tamanho}")
+                # Aplica Filtros de Segurança Avançados
+                modo = task.get("mode", "1")
+                temp_filter = None
+                if modo in ['2', '3']:
+                    cmd_scan = ["rclone", "lsf", task["src"], "-R", "--include", ".nosync", "--ignore-errors"]
+                    res_scan = subprocess.run(cmd_scan, capture_output=True, text=True, encoding="utf-8",
+                                              errors="replace")
+                    import tempfile
+                    fd, temp_filter = tempfile.mkstemp(suffix=".txt")
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        f.write("- Personal Vault/**\n- Cofre Pessoal/**\n- .DS_Store\n- Thumbs.db\n")
+                        for line in res_scan.stdout.splitlines():
+                            line = line.strip()
+                            if line.endswith(".nosync"):
+                                folder = line[:-7]
+                                if folder: f.write(f"- {folder}**\n")
+                        f.write("- **/.nosync\n")
+                        if modo == '3':
+                            src_remote = task["src"].split(":")[0].lower()
+                            for account in config.get("ACCOUNTS", []):
+                                if src_remote in [account.get("REMOTE_NAME", "").lower(),
+                                                  account.get("PROFILE_NAME", "").lower()]:
+                                    for path in account.get("IGNORE_PATTERNS", []):
+                                        f.write(f"- {path}\n")
+                                    break
+                    cmd.append(f"--filter-from={temp_filter}")
+                # Executa a migração silenciosa
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Limpa o arquivo temporário de filtro
+                if temp_filter:
+                    try:
+                        os.remove(temp_filter)
+                    except:
+                        pass
                 send_notification(T("Scheduled Migration"), f"{task['label']} {T('completed.')}")
-                
+
         except Exception as e:
             logger.error(f"{T('Scheduled task failure:')} {e}")
             
@@ -1446,20 +1542,29 @@ def ensure_mount(acc):
             else:
                 logger.error(f"[{acc['PROFILE_NAME']}] {T('Critical error in Auto-Mount:')} {res.stderr.strip()}")
 
+
 def print_help():
     print(f"\n=== {T('Sync Engine Multi-Account')} (v{VERSION}) ===")
-    print(T("Usage: sync-engine [COMMAND]"))
-    print(T("  config         Interactive wizard."))
-    print(f"🚀 {T('now Sync NOW.')}")
-    print(f"🧪 {T('test Start Test-Drive mode (Dry-Run).')}")
-    print(f"🧹 {T('clean File name cleaner.')}")
-    print(f"🔎 {T('analyze Error analyzer and solutions.')}")
-    print(f"🩺 {T('doctor System health diagnostics.')}")
-    print(f"🔄 {T('update Download and install the latest version.')}")
-    print(T("  start/stop     Start/Stop the invisible service."))
-    print(T("  status/reload  Check logs or restart the invisible service."))
-    print(T("  -v, --version  Show version."))
-    print(T("  -h, --help     Show this help."))
+    print(T("Usage: sync-engine [COMMAND]") + "\n")
+
+    # Estrutura: (Ícone, Comando Fixo, Descrição Traduzível)
+    comandos = [
+        ("  ", "config", T("Interactive wizard.")),
+        ("🚀", "now", T("Sync NOW.")),
+        ("🧪", "test", T("Start Test-Drive mode (Dry-Run).")),
+        ("🧹", "clean", T("File name cleaner.")),
+        ("🔎", "analyze", T("Error analyzer and solutions.")),
+        ("🩺", "doctor", T("System health diagnostics.")),
+        ("🔄", "update", T("Download and install the latest version.")),
+        ("  ", "start/stop", T("Start/Stop the invisible service.")),
+        ("  ", "status/reload", T("Check logs or restart the invisible service.")),
+        ("  ", "-v, --version", T("Show version.")),
+        ("  ", "-h, --help", T("Show this help."))
+    ]
+
+    for icone, comando, descricao in comandos:
+        # .ljust(15) preenche com espaços até atingir 15 caracteres
+        print(f" {icone} {comando.ljust(15)} {descricao}")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

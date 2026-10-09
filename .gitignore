@@ -227,10 +227,9 @@ __marimo__/
 migracao_*.txt
 *_agendamento.txt
 
-# Relatórios de auditoria e utilitários
+# Relatórios de auditoria
 auditoria_*.txt
 linhas_sem_traducao.txt
-utilitários/
 
 # Bancos de dados SQLite e Filtros dinâmicos
 *.db
