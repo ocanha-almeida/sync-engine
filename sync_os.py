@@ -50,7 +50,17 @@ def manage_service(action, log_file):
             subprocess.run(["systemctl", "--user", "disable", "--now", service_name], capture_output=True)
             print(f"🛑 {T('Linux Motor (Systemd) stopped and disabled.')}")
         elif action == "status":
+            print("\n" + "="*45)
             subprocess.run(["systemctl", "--user", "status", service_name])
+            print("="*45)
+            
+            res_s = subprocess.run(["pgrep", "-f", "rclone bisync"], capture_output=True, text=True)
+            if res_s.stdout.strip():
+                print(f"⚡ {T('ACTIVITY:')} {T('Synchronization in progress right now!')}")
+            else:
+                print(f"💤 {T('ACTIVITY:')} {T('Idle (Waiting for next cycle)')}")
+            print("="*45)
+            
         elif action == "reload":
             res = subprocess.run(["systemctl", "--user", "is-enabled", service_name], capture_output=True, text=True)
             if "enabled" not in res.stdout:
@@ -70,11 +80,8 @@ def manage_service(action, log_file):
         script_path = os.path.join(base_dir, "sync_engine.py")
 
         if action == "start":
-            # O MÉTODO COMPROVADO: Cria o atalho apontando direto pro motor
             ps_script = f"$WshShell = New-Object -comObject WScript.Shell; $Shortcut =$WshShell.CreateShortcut('{shortcut_path}'); $Shortcut.TargetPath = '{pythonw_exe}';$Shortcut.Arguments = '`\"{script_path}`\"'; $Shortcut.WorkingDirectory = '{base_dir}'; $Shortcut.WindowStyle = 0; $Shortcut.Save()"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], creationflags=_get_cflags())
-            
-            # Inicia na memória agora
             subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
             print(f"✅ {T('Windows Motor started and Automatic Startup enabled!')}")
 
@@ -82,8 +89,6 @@ def manage_service(action, log_file):
             if os.path.exists(shortcut_path):
                 try: os.remove(shortcut_path)
                 except: pass
-            
-            # Caça e mata usando pipe corrigido e comando robusto
             ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
             print(f"🛑 {T('Windows Motor stopped and Automatic Startup disabled.')}")
@@ -94,28 +99,31 @@ def manage_service(action, log_file):
             else:
                 print(f"\n📊 {T('Status (Startup): Automatic DISABLED.')}")
             
-            # Checagem simplificada para evitar falsos negativos no painel
-            ps_check = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } | Select-Object -ExpandProperty ProcessId"
-            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_check], capture_output=True, text=True, creationflags=_get_cflags())
+            ps_check_motor = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } | Select-Object -ExpandProperty ProcessId"
+            res_m = subprocess.run(["powershell", "-NoProfile", "-Command", ps_check_motor], capture_output=True, text=True, creationflags=_get_cflags())
             
-            if res.stdout.strip():
-                print(f"🟢 {T('Status (Memory): The invisible motor is RUNNING right now.')}")
+            ps_check_sync = "Get-CimInstance Win32_Process -Filter \"Name='rclone.exe'\" | Where-Object { $_.CommandLine -like '*bisync*' } | Select-Object -ExpandProperty ProcessId"
+            res_s = subprocess.run(["powershell", "-NoProfile", "-Command", ps_check_sync], capture_output=True, text=True, creationflags=_get_cflags())
+            
+            print("="*45)
+            if res_m.stdout.strip():
+                print(f"🟢 {T('MOTOR:')} {T('RUNNING (Active in Background)')}")
             else:
-                print(f"🔴 {T('Status (Memory): The invisible motor is STOPPED right now.')}")
+                print(f"🔴 {T('MOTOR:')} {T('STOPPED')}")
+                
+            if res_s.stdout.strip():
+                print(f"⚡ {T('ACTIVITY:')} {T('Synchronization in progress right now!')}")
+            else:
+                print(f"💤 {T('ACTIVITY:')} {T('Idle (Waiting for next cycle)')}")
+            print("="*45)
 
         elif action == "reload":
             is_enabled = os.path.exists(shortcut_path)
-            
             print(f"\n🔄 {T('Reloading the invisible motor in memory...')}")
-            # Mata APENAS o processo da memória, não mexe no atalho da pasta Startup!
             ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
-            
             import time; time.sleep(1)
-            
-            # Reinicia o processo na memória
             subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
-            
             if not is_enabled:
                 print(f"⚠️ {T('The motor was restarted in memory, but Automatic Startup REMAINS DISABLED.')}")
 

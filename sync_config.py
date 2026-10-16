@@ -6,7 +6,7 @@ import re
 import locale
 from logging.handlers import RotatingFileHandler
 
-VERSION = "7.2.4"
+VERSION = "7.2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.expanduser("~/.config/sync_engine")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -111,7 +111,6 @@ DEFAULT_CONFIG = {
     "LANGUAGE": "auto",
     "SYNC_INTERVAL": 300,
     "BW_LIMIT": "0",
-    "MAX_SIZE": "0",
     "REPORT_DIR": "",
     "AUTO_CHECK_NAMES": True,
     "ACCOUNTS": []

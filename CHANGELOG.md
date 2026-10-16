@@ -4,6 +4,26 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 
 O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/), e este projeto adere ao Versionamento Semântico.
 
+## [7.2.5] - 2026-10-16
+
+### 🚀 Adicionado
+* **Inteligência de Montagem (Drive Virtual):** Implementada a função `is_subpath`. O sistema agora detecta se um Drive Virtual está sendo montado dentro de uma pasta de sincronização e oferece a criação automática de regras de exclusão (filtros `.nosync`) para evitar loops infinitos e uploads redundantes.
+* **Proteção na Exclusão de Filtros:** Adicionado um alerta de segurança. Se o usuário tentar apagar uma regra de exclusão que protege um Drive Virtual ativo da conta, o motor emitirá um aviso vermelho contra loops de sincronização, exigindo confirmação explícita.
+* **Backup Parcial e Seletivo:** Nova interface de exportação. Agora é possível escolher entre um backup total ou parcial (escolhendo cirurgicamente apenas as contas que deseja migrar).
+* **Monitoramento Reativo de Status:** A opção "Check Motor Status" agora cruza dados dos processos do sistema operacional e exibe atividade visual (⚡ Sincronização em andamento ou 💤 Ocioso) indicando se há uma cópia de dados ativa no momento.
+* **Logging Universal:** Adicionada rastreabilidade total. Toda mudança de configuração de conta (montagem/desmontagem de drives, alteração de limites ou mudança de filtros) passa a ser guardada como um evento no arquivo principal `sync.log`.
+
+### 🔄 Modificado
+* **Contas em Modo Seguro:** Novas contas cadastradas passam a iniciar com o motor de segundo plano desligado por padrão (`AUTO_SYNC = False`), emitindo um aviso no terminal para o usuário parametrizar limites e regras de exclusão de antemão.
+* **Layout do Painel da Conta:** Menu de detalhes reordenado. Agora o layout acusa claramente qual o caminho físico do Drive Virtual, sinalizando se ele é Temporário ou Permanente, e provê uma opção rápida (atalho direto) para gerenciá-lo da própria tela da conta.
+* **Caminho Padrão de Backup:** A geração de backups JSON foi refatorada e agora aponta, de maneira nativa, para a raiz das pastas do usuário (`~/` no Linux ou `%USERPROFILE%` no Windows) em vez do diretório oculto da aplicação.
+
+### 🐛 Corrigido
+* **Reconstrução do Higienizador (Cleaner):** A função `executar_cleaner` teve seu escopo interno completamente restaurado. A aplicação varre pastas locais validamente, limpa caracteres proibidos, quebra colisões do tipo *Case-Sensitivity* para proteger a nuvem e gera o arquivo físico de relatório ao terminar.
+* **Tratamento de Espaços Pós-Traço:** Adicionado loop de repetição `while` na ferramenta de Cleaner, garantindo que espaços perdidos acidentalmente após o sublinhado (ex: `relatorio_ .pdf`) sejam iterativamente deletados.
+* **Queda do App no Backup (NameError):** Corrigido um *crash* que encerrava a aplicação ao tentar realizar a exportação total do backup por ausência da variável global `CONFIG_FILE`.
+* **Remoção de Código Morto:** Deletada a chave residual `"MAX_SIZE": "0"` do escopo primário do script gerador `sync_config.py`, concentrando a regra exclusivamente dentro do módulo local das contas.
+
 ## \[7.2.4\] - 2026-10-09
 
 ### Added
