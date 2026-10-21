@@ -46,15 +46,6 @@ def is_subpath(child, parent):
         return False
 
 def construir_menu(titulo, itens_menu):
-    """
-    Construtor reativo. Retorna False se o usuário pressionar Enter (Sair/Voltar).
-    Padrões em 'itens_menu':
-      - []                    -> Pula uma linha.
-      - "Texto"               -> Imprime como cabeçalho.
-      - ['Status', None]      -> Painel somente-leitura (O 'None' bloqueia a tecla).
-      - ['Label', func]       -> Opção com número sequencial automático.
-      - ['Label', func, 'R']  -> Opção com tecla customizada (ex: R).
-    """
     clear_screen()
     print(f"=== {titulo} ===\n" + "="*45)
     
@@ -73,7 +64,6 @@ def construir_menu(titulo, itens_menu):
         etiqueta = item[0]
         acao = item[1]
         
-        # O PULO DO GATO: Se a ação for None, é apenas texto informativo
         if acao is None:
             print(etiqueta)
             continue
@@ -369,7 +359,6 @@ def acao_mount_enable(idx):
         pasta = input(f"\n{T('Empty folder path to mount (Enter =')} {default_path}): ").strip()
         mount_path = os.path.expanduser(pasta) if pasta else os.path.expanduser(default_path)
     
-    # Proteção de Mount dentro do Sync
     for c_acc in config["ACCOUNTS"]:
         if is_subpath(mount_path, c_acc["LOCAL_DIR"]):
             print(f"\n⚠️ {T('You are mounting a drive INSIDE a sync folder:')} {c_acc['LOCAL_DIR']}")
@@ -1072,28 +1061,7 @@ def cmd_add_account():
     pause()
 
     idx_nova_conta = len(config["ACCOUNTS"]) - 1
-    cmd_detalhes_conta(idx_nova_conta)
-
-def cmd_remove_account():
-    while True:
-        config = load_config()
-        contas = config.get("ACCOUNTS", [])
-        if not contas:
-            clear_screen(); print(T("No account configured.")); pause(); return
-            
-        mn = []
-        for i, acc in enumerate(contas):
-            mn.append([acc['PROFILE_NAME'], lambda idx=i: acao_remover_conta(idx)])
-            
-        if not construir_menu(T("Remove an account"), mn):
-            break
-            
-def acao_remover_conta(idx):
-    config = load_config()
-    apagada = config["ACCOUNTS"].pop(idx)
-    save_config(config, f"{T('Removed account')} '{apagada['PROFILE_NAME']}'")
-    manage_service("reload", LOG_FILE)
-    print(f"\n🗑️ {T('Removed:')} {apagada['PROFILE_NAME']}"); pause()
+    cmd_detalhes_conta(idx_nova_conta, profile)
 
 def cmd_open_reports():
     config = load_config()
@@ -1133,7 +1101,7 @@ def cmd_list_accounts():
             cloud_type = rclone_types.get(remote_name, "")
             info_tipo = f" [{cloud_type.upper()}]" if cloud_type else ""
             label = f"{acc['PROFILE_NAME']}{info_tipo}{status_sync}"
-            mn.append([label, lambda idx=i: cmd_detalhes_conta(idx)])
+            mn.append([label, lambda idx=i, p=acc['PROFILE_NAME']: cmd_detalhes_conta(idx, p)])
         
         if not construir_menu(f"📋 {T('ACCOUNT DETAILS')}", mn):
             break
@@ -1178,10 +1146,26 @@ def acao_rem_filtro(idx):
         save_config(cfg, f"{T('Filters/Limits changed in')} '{cfg['ACCOUNTS'][idx]['PROFILE_NAME']}' ({T('Removed')}: {removido})")
         manage_service("reload", LOG_FILE)
 
-def cmd_detalhes_conta(idx):
+def acao_remover_conta(idx):
+    config = load_config()
+    conta = config["ACCOUNTS"][idx]
+    print(f"\n⚠️ {T('You are about to permanently remove the account:')} {conta['PROFILE_NAME']}")
+    conf = input(T("Are you sure? (Y/N) [N]: ")).strip().lower()
+    if conf in ['y', 's']:
+        apagada = config["ACCOUNTS"].pop(idx)
+        save_config(config, f"{T('Removed account')} '{apagada['PROFILE_NAME']}'")
+        manage_service("reload", LOG_FILE)
+        print(f"\n🗑️ {T('Removed:')} {apagada['PROFILE_NAME']}")
+        pause()
+
+def cmd_detalhes_conta(idx, profile_name):
     while True:
         config = load_config()
-        conta = config["ACCOUNTS"][idx]
+        contas = config.get("ACCOUNTS", [])
+        if idx >= len(contas) or contas[idx].get("PROFILE_NAME") != profile_name:
+            break
+            
+        conta = contas[idx]
         
         mn = []
         mn.append([f"☁️  {T('Cloud (Remote)')}  : {conta['REMOTE_NAME']}:", None])
@@ -1206,6 +1190,8 @@ def cmd_detalhes_conta(idx):
         mn.append([f"🛡️  {T('Manage Filters')}", lambda: cmd_gerenciar_filtros_conta(idx)])
         mn.append([f"🔄 {T('Toggle Background Sync')}", lambda: acao_toggle_sync(idx)])
         mn.append([f"🔌 {T('Mount / Unmount Virtual Drive (Shortcut)')}", lambda: cmd_mount_acc(idx)])
+        mn.append([])
+        mn.append([f"❌ {T('Remove this account')}", lambda: acao_remover_conta(idx)])
         
         if not construir_menu(f"⚙️  {T('ACCOUNT:')} {conta['PROFILE_NAME']}", mn):
             break
@@ -1638,7 +1624,6 @@ def acao_export_backup():
             
         backup_data = {"ACCOUNTS": selected_accs}
         
-    # --- A MUDANÇA ESTÁ AQUI ---
     default_file = f"sync_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     default_path = os.path.join(os.path.expanduser("~"), default_file)
     
@@ -1713,7 +1698,6 @@ def run_config_wizard():
         mn.append(f"--- {T('Account Configuration')} ---")
         mn.append([f"📋 {T('List current accounts')}", cmd_list_accounts])
         mn.append([f"➕ {T('Add new account')}", cmd_add_account])
-        mn.append([f"❌ {T('Remove an account')}", cmd_remove_account])
         
         mn.append(f"--- {T('Global Settings')} ---")
         mn.append([f"⚙️  {T('Edit Interval, Bandwidth, Folders, and Collisions')}", cmd_global_settings])
@@ -1721,7 +1705,7 @@ def run_config_wizard():
         mn.append(f"--- {T('Synchronization')} ---")
         mn.append([f"🧪 {T('Test-Drive / Simulation (Dry-Run)')}", run_dry_run])
         mn.append([f"🚀 {T('Force Sync Now')}", run_now])
-        mn.append([f"{T('⏰ Task Scheduler (Cron)')}", cmd_scheduler_menu])
+        mn.append([f"⏰ {T('Task Scheduler (Cron)')}", cmd_scheduler_menu])
         
         mn.append(f"--- {T('Maintenance')} ---")
         mn.append([f"📊 {T('Report of Files Over the Limit')}", run_size_report])

@@ -2,13 +2,13 @@
   <span>🇺🇸 English</span> | <a href="README-pt.md">🇧🇷 Português</a>
 </div>
 
-# 🔄 Sync Engine - Multi-Account Rclone Manager (v7.2.4)
+# 🔄 Sync Engine - Multi-Account Rclone Manager (v7.2.6)
 
 An intelligent, interactive, and secure bidirectional cloud sync engine built on top of the powerful `rclone bisync`. Designed for Linux and Windows, it transforms Rclone's complexity into a seamless experience through a comprehensive CLI wizard.
 
 Born from the need to overcome the limitations of traditional cloud clients, this project heavily focuses on automatic background synchronization, native protection against accidental deletions, strict bandwidth/size limits, and surgical bidirectional folder blocking.
 
-## ✨ Key Features (Updated v7.2.4)
+## ✨ Key Features (Updated v7.2.6)
 
 *   **Native Internationalization (i18n):** The engine now automatically detects your operating system's language and dynamically translates the entire CLI interface and generated reports. Currently natively supported in **English**, **Portuguese**, **Spanish**, **French**, **German**, **Italian**, **Japanese**, and **Simplified Chinese**, with a dynamic Language Selector built right into the Global Settings.
 *   **Built-in Task Scheduler (Cron):** Schedule background syncs (Normal or Forced) and Cloud-to-Cloud Migrations for specific times and dates, all managed directly within the interactive wizard without needing external OS task schedulers.
@@ -18,7 +18,9 @@ Born from the need to overcome the limitations of traditional cloud clients, thi
 *   **Error Analyzer & Auto-Reconnect (`analyze`):** Forget confusing logs. The engine translates Rclone failures into readable diagnostics. Automatically detects expired security tokens and triggers your browser for instant 1-click renewal.
 *   **Smart Bidirectional Blocking (`.nosync`):** Create an empty file named `.nosync` inside any folder (locally or directly in the cloud) and the engine will instantly ignore it.
 *   **Isolated & Standardized Reports:** All history logs are generated with timestamps in the header and isolated by account in your chosen folder.
-*   **Native Filename Cleaner (`clean`):** Scans your local folders for special characters that cause cloud upload errors, shows a safe preview, and generates a detailed report.
+*   **Native Filename Cleaner (`clean`):** Scans your local folders for special characters that cause cloud upload errors, automatically corrects them (including trailing spaces and case-sensitivity collisions), shows a safe preview, and generates a detailed report.
+*   **Intelligent Virtual Drive Protection:** The engine now automatically detects if you are mounting a virtual drive inside an active sync folder and offers to instantly add a `.nosync` exclusion rule to prevent infinite upload loops.
+*   **Status Dashboard:** The CLI status screen (`sync-engine status`) now displays a real-time list of all accounts currently watched by the background motor, indicating whether they are active or paused.
 *   **Auto-Healing & Auto-Unlocker:** The script detects critical API failures and stuck lock files, automatically breaking the locks and performing deep resyncs (`--resync`) to recover.
 *   **Safe Auto-Uninstall:** The engine now has a clean self-destruct routine protected by a text challenge (CAPTCHA).
 *   **Background Service:** Runs silently at the user level, allowing auto-start without requiring administrative privileges for daily tasks.

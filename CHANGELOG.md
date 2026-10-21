@@ -4,6 +4,24 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 
 O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/), e este projeto adere ao Versionamento Semântico.
 
+## [7.2.6] - 2026-10-21
+
+### Adições
+- **Painel de Status Enriquecido:** O comando `sync-engine status` agora lista as "Contas de Sincronização em Segundo Plano", exibindo em tempo real quais contas estão sendo vigiadas pelo motor e se estão ativas (🟢) ou pausadas (🔴).
+- **Proteção de Loops em Drives Virtuais:** Ao adicionar uma nova conta ou montar um drive virtual (temporário ou permanente), o sistema verifica através da nova função `is_subpath()` se o drive está sendo montado dentro de uma pasta de sincronização e sugere automaticamente a criação de um filtro `.nosync` para evitar uploads infinitos.
+- **Backup Parcial:** A funcionalidade de Backup de Configurações agora permite escolher entre um backup total ou parcial (escolhendo contas específicas para exportar).
+
+### Modificações
+- **Refatoração do Higienizador de Nomes (`clean`):** A função `executar_cleaner` foi totalmente reconstruída. Agora ela executa as correções físicas nos nomes dos arquivos (tratando caracteres inválidos da nuvem, colisões de maiúsculas/minúsculas e removendo espaços soltos no final de formatações).
+- **Desativação de Paginação no Status (Linux):** A flag `--no-pager` foi adicionada ao comando `systemctl status` no `sync_os.py` para evitar que a tela seja travada exigindo que o usuário pressione `q` para sair.
+- **Menu Conta Mais Seguro:** A opção de "Remover Conta" foi retirada do menu principal e movida para o final do painel de "Detalhes da Conta", incluindo um aviso vermelho de confirmação (Y/N) para evitar exclusões acidentais.
+- **Limpeza do Local de Salvar Backups:** O sistema agora sugere automaticamente a pasta de usuário (`~/` ou `%USERPROFILE%`) como caminho padrão para salvar os arquivos `.json` de backup.
+
+### Correções
+- Corrigido o erro `NameError: name 'CONFIG_FILE' is not defined` que impedia a geração de backups pelo menu do usuário.
+- O campo global de `MAX_SIZE` obsoleto foi removido do `DEFAULT_CONFIG` inicial para não gerar chaves inúteis no arquivo de novos usuários.
+- **Atualização da Suíte de Internacionalização (i18n):** O contador do script `injetar_traducoes.py` foi revisado para ignorar strings equivalentes e a nova string do "Drive Virtual" contendo quebras de linha (`\n`) foi devidamente adicionada ao banco de dados dos 7 idiomas nativos.
+
 ## [7.2.5] - 2026-10-16
 
 ### 🚀 Adicionado

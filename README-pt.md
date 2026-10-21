@@ -2,13 +2,13 @@
   <a href="README.md">🇺🇸 English</a> | <span>🇧🇷 Português</span>
 </div>
 
-# 🔄 Sync Engine - Gerenciador Multi-Conta Rclone (v7.2.4)
+# 🔄 Sync Engine - Gerenciador Multi-Conta Rclone (v7.2.6)
 
 Um motor de sincronização bidirecional em nuvem inteligente, interativo e seguro, construído sobre o poderoso `rclone bisync`. Projetado para Linux e Windows, ele transforma a complexidade do Rclone em uma experiência fluida através de um assistente CLI abrangente.
 
 Nascido da necessidade de superar as limitações dos clientes de nuvem tradicionais, este projeto foca fortemente em sincronização automática em segundo plano, proteção nativa contra exclusões acidentais, limites rígidos de banda/tamanho e bloqueio bidirecional cirúrgico de pastas.
 
-## ✨ Principais Recursos (Atualizado v7.2.4)
+## ✨ Principais Recursos (Atualizado v7.2.6)
 
 *   **Internacionalização Nativa (i18n):** O motor agora detecta automaticamente o idioma do seu sistema operacional e traduz dinamicamente toda a interface CLI e os relatórios gerados. Atualmente com suporte nativo em **Inglês**, **Português**, **Espanhol**, **Francês**, **Alemão**, **Italiano**, **Japonês** e **Chinês Simplificado**, com um Seletor de Idiomas dinâmico embutido nas Configurações Globais.
 *   **Agendador de Tarefas Integrado (Cron):** Agende sincronizações em segundo plano (Normais ou Forçadas) e Migrações Nuvem-para-Nuvem para horários e datas específicas, tudo gerenciado diretamente no assistente interativo, sem precisar depender dos agendadores de tarefas do sistema operacional.
@@ -18,7 +18,9 @@ Nascido da necessidade de superar as limitações dos clientes de nuvem tradicio
 *   **Analisador de Erros & Auto-Reconexão (`analyze`):** Esqueça os logs confusos. O motor traduz as falhas do Rclone em diagnósticos legíveis. Detecta automaticamente tokens de segurança expirados e abre o seu navegador para renovação instantânea com 1 clique.
 *   **Bloqueio Bidirecional Inteligente (`.nosync`):** Crie um arquivo vazio chamado `.nosync` dentro de qualquer pasta (localmente ou diretamente na nuvem) e o motor irá ignorá-la instantaneamente.
 *   **Relatórios Isolados e Padronizados:** Todos os históricos de logs são gerados com carimbos de data/hora no cabeçalho e isolados por conta na pasta de sua escolha.
-*   **Higienizador Nativo de Nomes (`clean`):** Varre suas pastas locais em busca de caracteres especiais que causam erros de upload na nuvem, mostra uma pré-visualização segura e gera um relatório detalhado.
+*   **Higienizador Nativo de Nomes (`clean`):** Varre suas pastas locais em busca de caracteres especiais que causam erros de upload na nuvem, corrige-os automaticamente (incluindo espaços sobrando e colisões de maiúsculas/minúsculas), mostra uma pré-visualização segura e gera um relatório detalhado.
+*   **Proteção Inteligente de Drive Virtual:** O motor agora detecta automaticamente se você está montando um drive virtual dentro de uma pasta de sincronização ativa e oferece a adição instantânea de uma regra de exclusão para evitar loops infinitos de upload.
+*   **Painel de Status:** A tela de status CLI (`sync-engine status`) agora exibe uma lista em tempo real de todas as contas vigiadas pelo motor em segundo plano, indicando claramente se estão ativas ou pausadas.
 *   **Auto-Cura & Auto-Desbloqueio:** O script detecta falhas críticas de API e arquivos de bloqueio (lock files) travados, quebrando os bloqueios automaticamente e realizando ressincronizações profundas (`--resync`) para se recuperar.
 *   **Auto-Desinstalação Segura:** O motor agora possui uma rotina de autodestruição limpa, protegida por um desafio de texto (CAPTCHA).
 *   **Serviço em Segundo Plano:** Roda silenciosamente a nível de usuário, permitindo o início automático sem exigir privilégios administrativos para tarefas diárias.

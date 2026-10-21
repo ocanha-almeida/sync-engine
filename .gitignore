@@ -239,3 +239,12 @@ excludes_*.txt
 # Pastas de ambiente virtual
 venv/
 .venv/
+
+# Arquivos gerados pelos utilitários i18n
+dicionario_base.json
+
+# Rascunhos temporários de injeção de idiomas
+novas_*.json
+traducoes_*.json
+temp_*.json
+tmp_*.json

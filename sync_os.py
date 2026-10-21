@@ -35,8 +35,8 @@ WantedBy=default.target
     subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
 
 def manage_service(action, log_file):
-    # Importa a função de tradução aqui para evitar problemas de importação circular no boot do sistema
-    from sync_config import T 
+    # Importa a função de tradução e carregamento de config aqui para evitar importação circular
+    from sync_config import T, load_config
 
     if SISTEMA == "Linux":
         service_name = "sync-engine.service"
@@ -51,7 +51,23 @@ def manage_service(action, log_file):
             print(f"🛑 {T('Linux Motor (Systemd) stopped and disabled.')}")
         elif action == "status":
             print("\n" + "="*45)
-            subprocess.run(["systemctl", "--user", "status", service_name])
+            # A flag --no-pager impede que o terminal trave esperando o [q]
+            subprocess.run(["systemctl", "--user", "status", service_name, "--no-pager"])
+            print("="*45)
+            
+            config = load_config()
+            contas = config.get("ACCOUNTS", [])
+            print(f"📋 {T('BACKGROUND SYNC ACCOUNTS:')}")
+            if not contas:
+                print(f"   ({T('No accounts configured')})")
+            else:
+                for acc in contas:
+                    nome = acc.get("PROFILE_NAME", "Unknown")
+                    pasta = acc.get("LOCAL_DIR", "")
+                    if acc.get("AUTO_SYNC", True):
+                        print(f"   🟢 {nome} -> {pasta}")
+                    else:
+                        print(f"   🔴 {nome} [{T('PAUSED')}]")
             print("="*45)
             
             res_s = subprocess.run(["pgrep", "-f", "rclone bisync"], capture_output=True, text=True)
@@ -111,6 +127,22 @@ def manage_service(action, log_file):
             else:
                 print(f"🔴 {T('MOTOR:')} {T('STOPPED')}")
                 
+            config = load_config()
+            contas = config.get("ACCOUNTS", [])
+            print("="*45)
+            print(f"📋 {T('BACKGROUND SYNC ACCOUNTS:')}")
+            if not contas:
+                print(f"   ({T('No accounts configured')})")
+            else:
+                for acc in contas:
+                    nome = acc.get("PROFILE_NAME", "Unknown")
+                    pasta = acc.get("LOCAL_DIR", "")
+                    if acc.get("AUTO_SYNC", True):
+                        print(f"   🟢 {nome} -> {pasta}")
+                    else:
+                        print(f"   🔴 {nome} [{T('PAUSED')}]")
+            print("="*45)
+
             if res_s.stdout.strip():
                 print(f"⚡ {T('ACTIVITY:')} {T('Synchronization in progress right now!')}")
             else:
