@@ -33,9 +33,17 @@ try {
 
     if (!(Test-Path $InstallDir)) { New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null }
 
+    # Copia os arquivos Python
     Copy-Item -Path "$PSScriptRoot\*.py" -Destination $InstallDir -Force
-    if (Test-Path "$PSScriptRoot\locales") { Copy-Item -Path "$PSScriptRoot\locales" -Destination $InstallDir -Recurse -Force }
 
+    # Copia a pasta locales de forma segura
+    if (Test-Path "$PSScriptRoot\locales") { 
+        $DestLocales = Join-Path $InstallDir "locales"
+        if (!(Test-Path $DestLocales)) { New-Item -ItemType Directory -Force -Path $DestLocales | Out-Null }
+        Copy-Item -Path "$PSScriptRoot\locales\*" -Destination $DestLocales -Recurse -Force 
+    }
+
+    # Criação do .cmd corrigida
     $BatPath = Join-Path $InstallDir "sync-engine.cmd"
     $BatContent = "@echo off`npython `"$InstallDir\sync_engine.py`" %*"
     Set-Content -Path $BatPath -Value$BatContent -Encoding Ascii
