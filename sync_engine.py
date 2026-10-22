@@ -640,8 +640,71 @@ def run_size_report():
     pause()
 
 # ==========================================
-# NÚCLEO DE SINCRONIZAÇÃO
+# NÚCLEO DE SINCRONIZAÇÃO E ATUALIZAÇÃO
 # ==========================================
+def _parse_version(v):
+    return tuple(map(int, re.findall(r'\d+', str(v))))
+
+def _check_remote_version():
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        cache_buster = int(time.time())
+        url_no_cache = f"{UPDATE_URL_RAW}?t={cache_buster}"
+        req = urllib.request.Request(url_no_cache, headers={'Cache-Control': 'no-cache'})
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
+            content = response.read().decode('utf-8')
+            match = re.search(r'(?im)^[ \t]*VERSION\s*=\s*["\']([^"\']+)["\']', content)
+            return match.group(1) if match else None
+    except Exception:
+        return None
+
+def _download_and_install_update():
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    tmp_dir = tempfile.mkdtemp()
+    zip_path = os.path.join(tmp_dir, "update.zip")
+    req = urllib.request.Request(UPDATE_URL_ZIP, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, context=ctx) as response, open(zip_path, 'wb') as out_file:
+        shutil.copyfileobj(response, out_file)
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref: 
+        zip_ref.extractall(tmp_dir)
+    
+    extract_dir = os.path.join(tmp_dir, "sync-engine-main")
+    if SISTEMA == "Windows":
+        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "_core_install.ps1"], cwd=extract_dir, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000))
+    else:
+        subprocess.run(["bash", "install-linux.sh"], cwd=extract_dir)
+        
+    shutil.rmtree(tmp_dir)
+
+def run_update():
+    clear_screen()
+    print("="*45 + f"\n🔄 {T('UPDATE CHECKER')}\n" + "="*45)
+    print(f"{T('Local version:')}  {VERSION}")
+    
+    remote_version = _check_remote_version()
+    if not remote_version:
+        print(f"❌ {T('Could not identify the version on the server.')}"); pause(); return
+
+    print(f"{T('Remote version:')} {remote_version}\n")
+
+    if _parse_version(remote_version) <= _parse_version(VERSION):
+        print(f"✅ {T('You are already using the latest version!')}"); pause(); return        
+    
+    print(f"🎉 {T('A new version is available!')}")
+    resp = input(T("Do you want to download and install the update now? (Y/N) [N]: ")).strip().lower()
+    if resp not in ['s', 'y']: return
+        
+    print(f"\n📥 {T('Downloading update package...')}")
+    try:
+        _download_and_install_update()
+        print(f"\n✅ {T('Update completed successfully!')}"); pause(); sys.exit(0)
+    except Exception as e:
+        print(f"\n❌ {T('Error during the update process:')} {e}"); pause()
+
 def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir, profile_name):
     cflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000) if os.name == 'nt' else 0
     safe_profile = "".join([c for c in profile_name.lower().replace(" ", "_") if c.isalnum() or c=='_'])
@@ -697,62 +760,6 @@ def run_sync(local_dir, remote_name, filter_file, bw_limit, max_size, report_dir
     else:
         clean_log_file(log_file)
         return False, False, err_msg
-
-def run_update():
-    import time
-    clear_screen()
-    print("="*45 + f"\n🔄 {T('UPDATE CHECKER')}\n" + "="*45)
-    print(f"{T('Local version:')}  {VERSION}")
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    try:
-        cache_buster = int(time.time())
-        url_no_cache = f"{UPDATE_URL_RAW}?t={cache_buster}"
-        
-        req = urllib.request.Request(url_no_cache, headers={'Cache-Control': 'no-cache'})
-        with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
-            content = response.read().decode('utf-8')
-            match = re.search(r'(?im)^[ \t]*VERSION\s*=\s*["\']([^"\']+)["\']', content)
-            remote_version = match.group(1) if match else None
-    except Exception as e:
-        print(f"❌ {T('Network error:')} {e}"); pause(); return
-
-    if not remote_version:
-        print(f"❌ {T('Could not identify the version on the server.')}"); pause(); return
-
-    print(f"{T('Remote version:')} {remote_version}\n")
-
-    def parse_version(v):
-        return tuple(map(int, re.findall(r'\d+', str(v))))
-
-    if parse_version(remote_version) <= parse_version(VERSION):
-        print(f"✅ {T('You are already using the latest version!')}"); pause(); return        
-    
-    print(f"🎉 {T('A new version is available!')}")
-    resp = input(T("Do you want to download and install the update now? (Y/N) [N]: ")).strip().lower()
-    if resp not in ['s', 'y']: return
-        
-    print(f"\n📥 {T('Downloading update package...')}")
-    try:
-        tmp_dir = tempfile.mkdtemp()
-        zip_path = os.path.join(tmp_dir, "update.zip")
-        req = urllib.request.Request(UPDATE_URL_ZIP, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, context=ctx) as response, open(zip_path, 'wb') as out_file:
-            shutil.copyfileobj(response, out_file)
-        print(f"📦 {T('Extracting files...')}")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref: zip_ref.extractall(tmp_dir)
-        
-        extract_dir = os.path.join(tmp_dir, "sync-engine-main")
-        if SISTEMA == "Windows":
-            subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "_core_install.ps1"], cwd=extract_dir)
-        else:
-            subprocess.run(["bash", "install-linux.sh"], cwd=extract_dir)
-            
-        shutil.rmtree(tmp_dir)
-        print(f"\n✅ {T('Update completed successfully!')}"); pause(); sys.exit(0)
-    except Exception as e:
-        print(f"\n❌ {T('Error during the update process:')} {e}"); pause()
 
 def run_cloud_migration():
     clear_screen()
@@ -1274,11 +1281,20 @@ def cmd_global_settings():
         mn.append([f"⏱️  {T('Interval')} ({config.get('SYNC_INTERVAL', 300)}s)", acao_mudar_intervalo])
         mn.append([f"📶 {T('Bandwidth Limit')} ({config.get('BW_LIMIT', '0')})", acao_mudar_banda])
         mn.append([f"📂 {T('Reports Folder')} ({T('Current:')} {os.path.normpath(get_report_dir(config))})", cmd_menu_relatorios])
+        
         status_col = T("ON") if config.get("AUTO_CHECK_NAMES", True) else T("OFF")
         mn.append([f"🛡️  {T('Auto Block on Name Collisions')} ({status_col})", acao_toggle_colisao])
         
+        status_upd = T("ON") if config.get("AUTO_UPDATE", False) else T("OFF")
+        mn.append([f"🔄 {T('Automatic Update')} ({status_upd})", acao_toggle_autoupdate])
+        
         if not construir_menu(T("Edit Interval, Bandwidth, Folders, and Collisions"), mn):
             break
+
+def acao_toggle_autoupdate():
+    cfg = load_config()
+    cfg["AUTO_UPDATE"] = not cfg.get("AUTO_UPDATE", False)
+    save_config(cfg, f"Auto Update changed to {cfg['AUTO_UPDATE']}")
 
 def cmd_language_menu():
     while True:
@@ -1600,30 +1616,49 @@ def acao_export_backup():
     
     backup_data = {}
     if op == 't':
-        backup_data = cfg
+        backup_data = {k: v for k, v in cfg.items()}
     elif op == 'p':
+        print(f"\n{T('Do you want to include Global Settings in this backup? (Y/N) [N]: ')}")
+        inc_global = input().strip().lower() in ['y', 's']
+        
+        if inc_global:
+            for k, v in cfg.items():
+                if k != "ACCOUNTS":
+                    backup_data[k] = v
+                    
         if not accs:
-            print(f"⚠️ {T('No accounts to export.')}"); pause(); return
+            print(f"⚠️ {T('No accounts to export.')}")
+        else:
+            print("\n" + T("Select the accounts to export:"))
+            for i, a in enumerate(accs):
+                print(f"  [{i+1}] {a['PROFILE_NAME']} ({a['REMOTE_NAME']}:)")
+                
+            nums = input(T("\nEnter the numbers (separated by commas) or leave blank for none: ")).strip()
+            selected_accs = []
+            if nums:
+                for num_str in nums.split(','):
+                    if num_str.strip().isdigit():
+                        idx = int(num_str.strip()) - 1
+                        if 0 <= idx < len(accs):
+                            selected_accs.append(accs[idx])
             
-        print("\n" + T("Select the accounts to export:"))
-        for i, a in enumerate(accs):
-            print(f"  [{i+1}] {a['PROFILE_NAME']} ({a['REMOTE_NAME']}:)")
-            
-        nums = input(T("\nEnter the numbers (separated by commas): ")).strip()
-        if not nums: return
+            if selected_accs:
+                backup_data["ACCOUNTS"] = selected_accs
+                
+    if not backup_data:
+        print(f"❌ {T('Nothing selected to backup.')}"); pause(); return
         
-        selected_accs = []
-        for num_str in nums.split(','):
-            if num_str.strip().isdigit():
-                idx = int(num_str.strip()) - 1
-                if 0 <= idx < len(accs):
-                    selected_accs.append(accs[idx])
-        
-        if not selected_accs: 
-            print(f"❌ {T('No valid accounts selected.')}"); pause(); return
-            
-        backup_data = {"ACCOUNTS": selected_accs}
-        
+    nomes_contas = [a["PROFILE_NAME"] for a in backup_data.get("ACCOUNTS", [])]
+    tem_globais = any(k not in ["ACCOUNTS", "_META"] for k in backup_data.keys())
+    
+    backup_data["_META"] = {
+        "version": VERSION,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "description": "Sync Engine Backup File",
+        "includes_globals": tem_globais,
+        "accounts_included": nomes_contas
+    }
+    
     default_file = f"sync_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     default_path = os.path.join(os.path.expanduser("~"), default_file)
     
@@ -1639,55 +1674,97 @@ def acao_export_backup():
     pause()
 
 def acao_import_backup():
+    import json
+    import os
+    
     path = input(f"\n{T('Path to backup JSON file')}: ").strip()
     path = os.path.expanduser(path)
     if not os.path.exists(path):
         print(f"❌ {T('File not found.')}"); pause(); return
     try:
-        import json
         with open(path, "r", encoding="utf-8") as f:
             b_cfg = json.load(f)
     except:
         print(f"❌ {T('Invalid JSON file.')}"); pause(); return
         
+    meta = b_cfg.get("_META", {})
     b_accs = b_cfg.get("ACCOUNTS", [])
-    if not b_accs:
-        print(f"⚠️ {T('No accounts found in this backup.')}"); pause(); return
-        
-    print(f"\n{T('Found')} {len(b_accs)} {T('account(s) in backup:')}")
-    for i, a in enumerate(b_accs):
-        print(f"  [{i+1}] {a['PROFILE_NAME']} ({a['REMOTE_NAME']}: -> {a['LOCAL_DIR']})")
-        
-    print(f"\n[T] {T('Restore TOTAL (Overwrite current config completely)')}")
-    print(f"[P] {T('Restore PARTIAL (Select specific accounts to add)')}")
-    op = input(f"{T('Option (T/P) [Enter to cancel]: ')}").strip().lower()
+    tem_globais = meta.get("includes_globals") if "_META" in b_cfg else any(k not in ["ACCOUNTS", "_META"] for k in b_cfg.keys())
+    
+    print(f"\n=== {T('BACKUP INFO')} ===")
+    print(f"📅 {T('Created at:')} {meta.get('created_at', T('Unknown'))}")
+    print(f"⚙️  {T('Global Settings Included:')} {T('Yes') if tem_globais else T('No')}")
+    print(f"📁 {T('Accounts Included:')} {len(b_accs)}")
+    for a in b_accs:
+        print(f"   - {a['PROFILE_NAME']}")
+    print("=====================\n")
     
     cfg = load_config()
-    if op == 't':
-        conf = input(T("WARNING: This will replace all your current settings! Are you sure? (Y/N): ")).strip().lower()
-        if conf in ['y', 's']:
-            save_config(b_cfg, "Full backup restored")
-            print(f"✅ {T('Full backup restored successfully!')}")
-            
-    elif op == 'p':
-        nums = input(T("Enter the numbers of the accounts to import (separated by commas): ")).strip()
-        if not nums: return
-        add_count = 0
-        for num_str in nums.split(','):
-            if num_str.strip().isdigit():
-                idx = int(num_str.strip()) - 1
-                if 0 <= idx < len(b_accs):
-                    nova = b_accs[idx]
-                    c_names = [a['PROFILE_NAME'] for a in cfg.get("ACCOUNTS", [])]
-                    while nova['PROFILE_NAME'] in c_names:
-                        nova['PROFILE_NAME'] += " (Imported)"
-                    cfg.setdefault("ACCOUNTS", []).append(nova)
-                    add_count += 1
-        if add_count > 0:
-            save_config(cfg, f"Partially restored {add_count} account(s)")
-            print(f"✅ {add_count} {T('account(s) imported successfully!')}")
-    else: return
+    restaurar_globais = False
     
+    if tem_globais:
+        resp = input(T("Restore Global Settings? (Y/N) [N]: ")).strip().lower()
+        restaurar_globais = resp in ['y', 's']
+        
+    restaurar_contas = []
+    if b_accs:
+        print(f"\n[T] {T('Restore ALL accounts from backup')}")
+        print(f"[P] {T('Restore PARTIAL (Select specific accounts)')}")
+        op_acc = input(T("Option (T/P) [Enter to skip accounts]: ")).strip().lower()
+        
+        if op_acc == 't':
+            restaurar_contas = b_accs
+        elif op_acc == 'p':
+            for i, a in enumerate(b_accs):
+                print(f"  [{i+1}] {a['PROFILE_NAME']}")
+            nums = input(T("Enter the numbers (separated by commas): ")).strip()
+            for num_str in nums.split(','):
+                if num_str.strip().isdigit():
+                    idx = int(num_str.strip()) - 1
+                    if 0 <= idx < len(b_accs):
+                        restaurar_contas.append(b_accs[idx])
+                        
+    if not restaurar_globais and not restaurar_contas:
+        print(f"⚠️ {T('Nothing selected to restore.')}"); pause(); return
+        
+    if restaurar_globais:
+        for k, v in b_cfg.items():
+            if k not in ["ACCOUNTS", "_META"]:
+                cfg[k] = v
+        print(f"✅ {T('Global settings restored.')}")
+        
+    contas_adicionadas = 0
+    if restaurar_contas:
+        for b_acc in restaurar_contas:
+            nome_conta = b_acc['PROFILE_NAME']
+            nomes_existentes = [a['PROFILE_NAME'] for a in cfg.setdefault("ACCOUNTS", [])]
+            
+            if nome_conta in nomes_existentes:
+                print(f"\n⚠️ {T('CONFLICT: Account already exists')} -> {nome_conta}")
+                print(f"  [S] {T('Skip')}")
+                print(f"  [R] {T('Replace existing')}")
+                print(f"  [K] {T('Keep both (Rename imported)')}")
+                act = input(T("Action (S/R/K) [S]: ")).strip().lower()
+                
+                if act == 'r':
+                    idx_remove = nomes_existentes.index(nome_conta)
+                    cfg["ACCOUNTS"].pop(idx_remove)
+                elif act == 'k':
+                    while b_acc['PROFILE_NAME'] in [a['PROFILE_NAME'] for a in cfg["ACCOUNTS"]]:
+                        b_acc['PROFILE_NAME'] += " (Imported)"
+                else:
+                    continue
+                    
+            b_acc["AUTO_SYNC"] = False
+            cfg["ACCOUNTS"].append(b_acc)
+            contas_adicionadas += 1
+            
+    save_config(cfg, "Backup restored")
+    if contas_adicionadas > 0:
+        print(f"\n✅ {contas_adicionadas} {T('account(s) imported successfully!')}")
+        print(f"🚨 {T('ATTENTION: All imported accounts have Background Sync TURNED OFF.')}")
+        print(f"   {T('Please check your filters and limits in the account menu before turning them on.')}")
+        
     manage_service("reload", LOG_FILE)
     pause()
 
@@ -1705,7 +1782,7 @@ def run_config_wizard():
         mn.append(f"--- {T('Synchronization')} ---")
         mn.append([f"🧪 {T('Test-Drive / Simulation (Dry-Run)')}", run_dry_run])
         mn.append([f"🚀 {T('Force Sync Now')}", run_now])
-        mn.append([f"⏰ {T('Task Scheduler (Cron)')}", cmd_scheduler_menu])
+        mn.append([f"{T('⏰ Task Scheduler (Cron)')}", cmd_scheduler_menu])
         
         mn.append(f"--- {T('Maintenance')} ---")
         mn.append([f"📊 {T('Report of Files Over the Limit')}", run_size_report])
@@ -1881,6 +1958,24 @@ if __name__ == "__main__":
                     logger.info(f"[{profile}] {T('Check complete. No changes detected.')}")
             
             process_scheduled_tasks(config)
+            
+            if config.get("AUTO_UPDATE", False):
+                last_check = config.get("LAST_UPDATE_CHECK", 0)
+                agora_ts = time.time()
+                if agora_ts - last_check > 86400:
+                    config["LAST_UPDATE_CHECK"] = agora_ts
+                    save_config(config)
+                    
+                    remote_ver = _check_remote_version()
+                    if remote_ver and _parse_version(remote_ver) > _parse_version(VERSION):
+                        logger.info(f"Auto-Update: New version {remote_ver} detected. Installing in background...")
+                        try:
+                            _download_and_install_update()
+                            logger.info("Auto-Update complete. Restarting service silently.")
+                            sys.exit(0)
+                        except Exception as e:
+                            logger.error(f"Auto-Update failed: {e}")
+
             time.sleep(config.get("SYNC_INTERVAL", 300))
     except Exception as e:
         logger.error(f"{T('CRITICAL MOTOR FAILURE:')} {e}")
