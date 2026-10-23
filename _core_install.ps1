@@ -91,5 +91,3 @@ try {
     Write-Host "`n❌ ERRO DURANTE A INSTALAÇÃO:" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
 }
-
-Read-Host "Close this terminal. Press Enter to exit... / Feche este terminal. Pressione Enter para sair..."
