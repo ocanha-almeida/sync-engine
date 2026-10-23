@@ -942,6 +942,7 @@ def run_doctor(config):
     print("="*45)
     input(T("\nPress Enter to return..."))
 
+
 def run_uninstall():
     clear_screen()
     print("=" * 45 + f"\n🧨 {T('SYNC ENGINE UNINSTALLATION')}\n" + "=" * 45)
@@ -961,7 +962,16 @@ def run_uninstall():
     print("\n" + "-" * 45)
     print(T("Do you also want to delete settings, databases"))
     print(T("and saved reports?"))
-    apagar_dados = input(T("(Y/N) [N]: ")).strip().lower() in ['s', 'y']
+
+    # --- NOVA LÓGICA DE VALIDAÇÃO RESTRITA ---
+    resp_dados = input(T("Answer (Y/N): ")).strip().lower()
+    if resp_dados not in ['y', 's', 'n']:
+        print(f"\n❌ {T('Invalid response. Operation canceled.')}")
+        pause()
+        return
+
+    apagar_dados = (resp_dados in ['s', 'y'])
+    # ------------------------------------------
 
     print(f"\n⏳ {T('Stopping invisible service...')}")
     manage_service("stop", LOG_FILE)
