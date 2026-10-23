@@ -51,7 +51,7 @@ try {
     # Criação do .cmd corrigida
     $BatPath = Join-Path $InstallDir "sync-engine.cmd"
     $BatContent = "@echo off`npython `"$InstallDir\sync_engine.py`" %*"
-    Set-Content -LiteralPath $BatPath -Value$BatContent -Encoding Ascii
+    Set-Content -LiteralPath $BatPath -Value $BatContent -Encoding Ascii
 
     # Atualização da Variável de Ambiente (PATH)
     $path = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User)
