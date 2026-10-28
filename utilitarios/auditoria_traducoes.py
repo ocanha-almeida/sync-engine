@@ -1,83 +1,58 @@
 #!/usr/bin/env python3
 """
-Auditoria de Cobertura de Internacionalização (i18n).
+Auditoria Abrangente de Mensagens e Strings do Sistema.
 
-Este script inspeciona os arquivos Python (.py) na raiz do projeto em busca
-de mensagens e textos enviados para telas, logs e relatórios que possam estar
-sem o tratamento da função de tradução T().
-
-Funcionalidades:
-- Analisa instruções de saída comuns: print(), input(), .write(), tee(),
-  chamadas de logger e send_notification().
-- Identifica ocorrências que não utilizam o invólucro T().
-- Ignora linhas puramente estéticas ou de formatação vazia.
-- Opera a partir da pasta 'utilitarios' e direciona a varredura exclusivamente
-  para a pasta-mãe (raiz do projeto) de forma não recursiva.
-- Gera um relatório detalhado formatado (arquivo.py; linha; conteudo).
+Este script inspeciona os ficheiros Python (.py) na raiz do projeto para catalogar
+todas as emissões de texto e verificar a cobertura da função de internacionalização T().
 """
 import os
 
-# Caminho absoluto da pasta-mãe (raiz do projeto)
 DIR_SCRIPT = os.path.dirname(os.path.abspath(__file__))
 DIR_PAI = os.path.dirname(DIR_SCRIPT)
 
 def auditar_codigo():
-    # Fragmentos que indicam saída de texto
     alvos = ['print(', 'input(', '.write(', 'tee(', 'logger.', 'send_notification(']
     
-    # Falsos positivos comuns (linhas que imprimem apenas formatação ou espaços e não precisam de tradução)
     ignorar_exatos = [
-        'print()', 'print("")', "print('')", 
-        'print("\\n")', "print('\\n')",
-        'print("="*45)', "print('='*45)",
+        'print()', 'print("")', "print('')", 'tee()', 'tee("")', "tee('')",
+        'print("\\n")', "print('\\n')", 'tee("\\n")', "tee('\\n')",
+        'print("="*45)', "print('='*45)", 'tee("="*45)', "tee('='*45)",
         'print("\\n" + "="*45)', "print('\\n' + '='*45)",
-        'print("-" * 45)', "print('-' * 45)"
+        'print("-" * 45)', "print('-' * 45)", 'tee("-" * 45)', "tee('-' * 45)"
     ]
     
     arquivo_saida = os.path.join(DIR_PAI, 'linhas_sem_traducao.txt')
-    encontrados = 0
-    arquivos_analisados = 0
+    encontrados, arquivos_analisados = 0, 0
     
     with open(arquivo_saida, 'w', encoding='utf-8') as out:
-        out.write("RELATÓRIO DE AUDITORIA DE TRADUÇÕES\n")
-        out.write("Formato: arquivo.py; linha; conteudo_da_linha\n")
-        out.write("="*60 + "\n\n")
+        out.write("RELATÓRIO DE AUDITORIA DE TRADUÇÕES\nFormato: arquivo.py; linha; conteudo_da_linha\n" + "="*60 + "\n\n")
         
-        # Percorre apenas os arquivos na pasta-mãe (não recursivo)
         for item in sorted(os.listdir(DIR_PAI)):
             caminho_item = os.path.join(DIR_PAI, item)
-            
             if os.path.isfile(caminho_item) and item.endswith('.py'):
                 arquivos_analisados += 1
                 try:
-                    with open(caminho_item, 'r', encoding='utf-8') as f:
-                        linhas = f.readlines()
-                        
+                    with open(caminho_item, 'r', encoding='utf-8') as f: linhas = f.readlines()
                     for num, linha in enumerate(linhas, start=1):
                         linha_limpa = linha.strip()
-                        
-                        # Pula comentários
-                        if linha_limpa.startswith('#'):
-                            continue
+                        if linha_limpa.startswith('#'): continue
                             
-                        # Verifica se a linha contém algum dos métodos de saída
                         if any(alvo in linha_limpa for alvo in alvos):
-                            # Se não possui a função T(, é suspeita
                             if 'T(' not in linha_limpa:
-                                # Filtra os falsos positivos (quebras de linha, linhas decorativas)
-                                linha_sem_espacos = linha_limpa.replace(" ", "")
-                                se_ignorar = any(ign.replace(" ", "") == linha_sem_espacos for ign in ignorar_exatos)
+                                linha_sem_esp = linha_limpa.replace(" ", "")
+                                se_ignorar = any(ign.replace(" ", "") in linha_sem_esp for ign in ignorar_exatos)
                                 
                                 if not se_ignorar:
                                     out.write(f"{item}; {num}; {linha_limpa}\n")
                                     encontrados += 1
-                except Exception as e:
-                    print(f"Erro ao ler {item}: {e}")
+                except Exception as e: print(f"Erro ao ler {item}: {e}")
 
-    print("✅ Varredura concluída!")
-    print(f"📂 Arquivos analisados na raiz: {arquivos_analisados}")
-    print(f"⚠️  Foram encontradas {encontrados} linhas suspeitas.")
-    print(f"📄 Relatório salvo em: '{arquivo_saida}'")
+    print(f"✅ Varredura concluída! {arquivos_analisados} ficheiros analisados na raiz.")
+    print(f"⚠️ Foram encontradas {encontrados} linhas suspeitas sem tradução. Relatório salvo em: '{arquivo_saida}'")
+    
+    if os.path.exists(os.path.join(DIR_PAI, 'auditoria_todas_mensagens.txt')):
+        os.remove(os.path.join(DIR_PAI, 'auditoria_todas_mensagens.txt'))
+        print("🗑️ Ficheiro antigo 'auditoria_todas_mensagens.txt' apagado com sucesso.")
 
 if __name__ == "__main__":
     auditar_codigo()

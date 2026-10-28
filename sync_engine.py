@@ -649,29 +649,56 @@ def acao_size_report_acc(idx):
     pause()
 
 def run_size_report():
-    clear_screen()
     config = load_config()
-    if not config.get("ACCOUNTS", []): return
-    
+    ACCOUNTS = config.get("ACCOUNTS", [])
+    if not ACCOUNTS: 
+        clear_screen()
+        print(f"\n{T('No account configured.')}")
+        pause()
+        return
+        
+    mn = []
+    mn.append([f"🔁 {T('All accounts (Batch)')}", lambda: executar_size_report_lote(ACCOUNTS)])
+    for i, acc in enumerate(ACCOUNTS):
+        limit_str = acc.get("MAX_SIZE", "0")
+        limit_lbl = T("Unlimited") if limit_str == "0" else limit_str
+        mn.append([f"📁 {acc['PROFILE_NAME']} ({T('Limit:')} {limit_lbl})", lambda idx=i: acao_size_report_acc(idx)])
+        
+    construir_menu(T("Report of Files Over the Limit"), mn)
+
+def executar_size_report_lote(contas):
+    config = load_config()
     report_dir = os.path.normpath(get_report_dir(config))
-    has_limits = any(acc.get("MAX_SIZE", "0") != "0" for acc in config.get("ACCOUNTS", []))
-    if not has_limits:
-        print(T("No size limit configured in your accounts.")); pause(); return
-
+    os.makedirs(report_dir, exist_ok=True)
+    
+    clear_screen()
     print("="*45 + f"\n📊 {T('FILES BLOCKED BY SIZE')}\n" + "="*45)
-    print(f"⏳ {T('Analyzing local folders and clouds. This might take a few seconds...')}")
+    
+    has_limits = any(acc.get("MAX_SIZE", "0") != "0" for acc in contas)
+    if not has_limits:
+        print(f"\n⚠️ {T('No size limit configured in your accounts (All are 0/Unlimited).')}")
+        print(T("To test a specific account with a temporary limit, choose it individually in the previous menu."))
+        pause()
+        return
 
-    for acc in config["ACCOUNTS"]:
+    print(f"\n⏳ {T('Analyzing local folders and clouds. This might take a few seconds...')}\n")
+
+    relatorios_gerados = 0
+    for acc in contas:
         max_size = acc.get("MAX_SIZE", "0")
         if max_size == "0":
+            print(f"⚠️  {acc['PROFILE_NAME']}: {T('Skipped (Limit is 0/Unlimited).')}")
             continue
 
         safe_name = "".join([c for c in acc['PROFILE_NAME'].lower().replace(" ", "_") if c.isalnum() or c=='_'])
         report_file = os.path.normpath(os.path.join(report_dir, f"{safe_name}_ultimo_relatorio_tamanho.txt"))
         
+        print(f"🔄 {T('Analyzing:')} {acc['PROFILE_NAME']}...")
         _gerar_size_report(acc, max_size, report_file, silent_stdout=True)
+        relatorios_gerados += 1
             
-    print(f"\n📂 {T('Isolated reports saved in folder:')} {report_dir}")
+    if relatorios_gerados > 0:
+        print(f"\n📂 {T('Isolated reports saved in folder:')} {report_dir}")
     pause()
 
 # ==========================================

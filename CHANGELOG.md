@@ -4,6 +4,17 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 
 O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/), e este projeto adere ao Versionamento Semântico.
 
+### v7.2.9
+**Menu e Interface**
+* **Reestruturação do Menu Principal:** Interface reorganizada em blocos lógicos definitivos (Configuração de Conta, Sincronização, Definições Globais, Ações Extras, Motor 2º Plano e Manutenção). Atualização e desinstalação movidas para a aba de Manutenção.
+* **Atalhos Dedicados por Conta:** Inclusão de botões de acesso rápido ao Limpador de Nomes, Relatório de Tamanho, Test-Drive (Dry-Run) e Forçar Sincronização diretamente na tela de detalhes de cada conta em foco.
+* **Relatório de Tamanho Interativo:** Nova tela de seleção permitindo rodar a análise de ficheiros em lote ou em contas individuais, com suporte à inserção de um "limite temporário" para testar contas configuradas como ilimitadas (0).
+
+**Motor e Estabilidade**
+* **Inteligência no Dry-Run (Auto-Cura):** O modo de simulação agora detecta automaticamente contas virgens sem histórico de execução e auto-injeta a flag `--resync`, permitindo simular a varredura inicial sem abortar o processo com o erro *"cannot find prior listings"*.
+* **Correção no Rastreador de Filtros:** Resolução de um crash silencioso que travava o utilitário de Relatório de Tamanho caso o arquivo `.txt` de filtros da conta alvo ainda não tivesse sido gerado pela primeira sincronização.
+* **Precisão no Relatório de Status (`sync_os`):** Aprimoramento na detecção de memória do serviço nativo (`systemctl is-active` no Linux e varredura de processos no Windows). O sistema agora corrige falsos positivos de ociosidade, informando claramente quando o motor está desligado, e exibe um alerta de bloqueio caso existam tarefas agendadas (Cron) mas o motor de segundo plano esteja inativo.
+
 ## [7.2.8] - 2026-10-28
 
 ### Modificações e Correções (Instalador Windows)
