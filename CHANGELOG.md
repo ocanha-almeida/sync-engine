@@ -4,6 +4,23 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 
 O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/), e este projeto adere ao Versionamento Semântico.
 
+## [7.2.8] - 2026-10-28
+
+### Modificações e Correções (Instalador Windows)
+* **Correção do Auto-Update Invisível:** Removida a instrução `Read-Host` no final do script `_core_install.ps1`. Isso impedia que a atualização em segundo plano fosse concluída, eliminando o travamento do processo na memória.
+* **Blindagem contra Arquivos Residuais:** Adicionada uma rotina de verificação que detecta e remove "arquivos folha" corrompidos (gerados por instalações anteriores que falharam), garantindo a criação correta da árvore de diretórios.
+* **Refatoração da Instalação de Idiomas:** O script agora extrai e copia o conteúdo da pasta `locales` de forma explícita para o destino, solucionando o erro de cópia de contêineres do PowerShell.
+* **Compatibilidade com PowerShell 5.1:** Substituição do parâmetro `-LiteralPath` por `-Path` nas chamadas estruturais (`New-Item`, `Test-Path`), assegurando compatibilidade total com o Windows 10 e 11 nativos.
+
+## [7.2.7] - 2026-10-27
+
+### Adições e Melhorias
+* **Novo Motor de Tradução Automática:** O utilitário `auto_tradutor.py` foi totalmente reescrito para utilizar a biblioteca nativa `deep-translator` (Google Translate), abandonando a API do Gemini. Isso resolve definitivamente os erros de cota excedida (HTTP 429) e sobrecarga (HTTP 503).
+* **Proteção contra Bloqueios de IP:** Implementado um controle de requisições com intervalo (`time.sleep`) no tradutor automático, prevenindo o erro "Too many requests" da API pública do Google.
+* **Backups Inteligentes:** O módulo de backup foi finalizado, permitindo agora a exportação e restauração modular. O usuário pode escolher fazer backup parcial (contas específicas) ou total, incluindo as configurações globais.
+* **Distribuição via GitHub Releases:** O sistema de auto-update passou a rastrear oficialmente as Tags do Git e as Releases do repositório, consolidando o GitHub como fonte unificada de atualizações.
+* **Nova Documentação:** Adicionados os manuais oficiais do tradutor (`auto_translator_en.md` e `auto_translator_pt.md`) detalhando o novo fluxo de internacionalização sem necessidade de chaves de API.
+
 ## [7.2.6] - 2026-10-21
 
 ### Adições

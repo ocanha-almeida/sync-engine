@@ -470,6 +470,13 @@ def executar_dry_run(contas_alvo):
             if config.get("BW_LIMIT", "0") != "0": cmd.append(f"--bwlimit={config.get('BW_LIMIT')}")
 
             result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            
+            output_str = (result.stderr + "\n" + result.stdout).lower()
+            if "resync" in output_str or "not found" in output_str:
+                tee(f"\n⚠️  {T('Triggering healing scan (--resync)...')}\n")
+                cmd.append("--resync")
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
             if result.stderr: tee(clean_log_text(result.stderr.strip()))
             if result.stdout: tee(clean_log_text(result.stdout.strip()))
             tee("-" * 45)
@@ -563,6 +570,84 @@ def executar_run_now(contas_alvo):
     else: print(f"\n{T('No synchronization was performed.')}")
     pause()
 
+def _gerar_size_report(acc, max_size, report_file, silent_stdout=False):
+    def format_size(bytes_str):
+        try:
+            b = int(bytes_str)
+            if b < 1024: return f"{b} B"
+            elif b < 1024**2: return f"{b/1024:.2f} KB"
+            elif b < 1024**3: return f"{b/1024**2:.2f} MB"
+            else: return f"{b/1024**3:.2f} GB"
+        except:
+            return bytes_str
+
+    with open(report_file, "w", encoding="utf-8") as rep_file:
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        def out(msg=""): 
+            if not silent_stdout: print(msg)
+            rep_file.write(msg + "\n")
+        
+        rep_file.write("="*45 + f"\n📊 {T('FILES BLOCKED BY SIZE')} ({acc['PROFILE_NAME']})\n{T('Date/Time:')} {agora}\n{T('Configured Limit:')} {max_size}\n" + "="*45 + "\n")
+        
+        filter_file = os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
+        cmd_base = ["rclone", "ls", "--min-size", max_size, "-q"]
+        if os.path.exists(filter_file):
+            cmd_base.append(f"--filter-from={filter_file}")
+        
+        out(f"\n🖥 {T('ON COMPUTER (Local):')}")
+        cmd_local = cmd_base.copy()
+        cmd_local.insert(2, os.path.expanduser(acc["LOCAL_DIR"]))
+        
+        res_local = subprocess.run(cmd_local, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if res_local.returncode != 0:
+            out(f"     ({T('Error scanning local folder:')} {res_local.stderr.strip()})")
+        elif res_local.stdout.strip():
+            for line in res_local.stdout.strip().split('\n'):
+                partes = line.strip().split(maxsplit=1)
+                if len(partes) == 2:
+                    out(f"     - [{T('Local')}] {partes[1]} ({format_size(partes[0])})")
+                else: out(f"     - {line.strip()}")
+        else: out(f"     ({T('None')})")
+
+        out(f"\n☁ {T('ON CLOUD (Remote):')}")
+        cmd_remote = cmd_base.copy()
+        cmd_remote.insert(2, f"{acc['REMOTE_NAME']}:")
+        
+        res_remote = subprocess.run(cmd_remote, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if res_remote.returncode != 0:
+            out(f"     ({T('Error: Could not connect to cloud')} '{acc['REMOTE_NAME']}')")
+        elif res_remote.stdout.strip():
+            for line in res_remote.stdout.strip().split('\n'):
+                partes = line.strip().split(maxsplit=1)
+                if len(partes) == 2:
+                    out(f"     - [{T('Cloud')}] {partes[1]} ({format_size(partes[0])})")
+                else: out(f"     - {line.strip()}")
+        else: out(f"     ({T('None')})")
+        rep_file.write("\n" + "-" * 45 + "\n")
+
+def acao_size_report_acc(idx):
+    config = load_config()
+    acc = config["ACCOUNTS"][idx]
+    max_size = acc.get("MAX_SIZE", "0")
+    
+    clear_screen()
+    print("="*45 + f"\n📊 {T('FILES BLOCKED BY SIZE')} ({acc['PROFILE_NAME']})\n" + "="*45)
+    
+    if max_size == "0":
+        print(f"\n⚠️ {T('This account has no size limit configured (Unlimited).')}")
+        max_size = input(T("Enter a temporary size to check now (e.g., 100M, 1G) [Enter to cancel]: ")).strip()
+        if not max_size: return
+
+    print(f"\n⏳ {T('Analyzing local folders and clouds. This might take a few seconds...')}")
+    report_dir = os.path.normpath(get_report_dir(config))
+    os.makedirs(report_dir, exist_ok=True)
+    safe_name = "".join([c for c in acc['PROFILE_NAME'].lower().replace(" ", "_") if c.isalnum() or c=='_'])
+    report_file = os.path.normpath(os.path.join(report_dir, f"{safe_name}_ultimo_relatorio_tamanho.txt"))
+
+    _gerar_size_report(acc, max_size, report_file, silent_stdout=False)
+    print(f"\n📂 {T('Report saved at:')} {report_file}")
+    pause()
+
 def run_size_report():
     clear_screen()
     config = load_config()
@@ -576,16 +661,6 @@ def run_size_report():
     print("="*45 + f"\n📊 {T('FILES BLOCKED BY SIZE')}\n" + "="*45)
     print(f"⏳ {T('Analyzing local folders and clouds. This might take a few seconds...')}")
 
-    def format_size(bytes_str):
-        try:
-            b = int(bytes_str)
-            if b < 1024: return f"{b} B"
-            elif b < 1024**2: return f"{b/1024:.2f} KB"
-            elif b < 1024**3: return f"{b/1024**2:.2f} MB"
-            else: return f"{b/1024**3:.2f} GB"
-        except:
-            return bytes_str
-
     for acc in config["ACCOUNTS"]:
         max_size = acc.get("MAX_SIZE", "0")
         if max_size == "0":
@@ -594,47 +669,7 @@ def run_size_report():
         safe_name = "".join([c for c in acc['PROFILE_NAME'].lower().replace(" ", "_") if c.isalnum() or c=='_'])
         report_file = os.path.normpath(os.path.join(report_dir, f"{safe_name}_ultimo_relatorio_tamanho.txt"))
         
-        with open(report_file, "w", encoding="utf-8") as rep_file:
-            agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            def tee(msg=""): rep_file.write(msg + "\n")
-            
-            tee("="*45 + f"\n📊 {T('FILES BLOCKED BY SIZE')} ({acc['PROFILE_NAME']})\n{T('Date/Time:')} {agora}\n{T('Configured Limit:')} {max_size}\n" + "="*45)
-            
-            filter_file = os.path.join(CONFIG_DIR, acc["FILTER_FILE"])
-            
-            tee(f"\n🖥 {T('ON COMPUTER (Local):')}")
-            cmd_local = ["rclone", "ls", os.path.expanduser(acc["LOCAL_DIR"]), f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
-            res_local = subprocess.run(cmd_local, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            
-            if res_local.stdout.strip():
-                for line in res_local.stdout.strip().split('\n'):
-                    partes = line.strip().split(maxsplit=1)
-                    if len(partes) == 2:
-                        tamanho_hr = format_size(partes[0])
-                        caminho = partes[1]
-                        tee(f"     - [{T('Local')}] {caminho} ({tamanho_hr})")
-                    else:
-                        tee(f"     - {line.strip()}")
-            else: tee(f"     ({T('None')})")
-
-            tee(f"\n☁ {T('ON CLOUD (Remote):')}")
-            cmd_remote = ["rclone", "ls", f"{acc['REMOTE_NAME']}:", f"--min-size={max_size}", f"--filter-from={filter_file}", "-q"]
-            res_remote = subprocess.run(cmd_remote, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            
-            if res_remote.returncode != 0:
-                tee(f"     ({T('Error: Could not connect to cloud')} '{acc['REMOTE_NAME']}')")
-            elif res_remote.stdout.strip():
-                for line in res_remote.stdout.strip().split('\n'):
-                    partes = line.strip().split(maxsplit=1)
-                    if len(partes) == 2:
-                        tamanho_hr = format_size(partes[0])
-                        caminho = partes[1]
-                        tee(f"     - [{T('Cloud')}] {caminho} ({tamanho_hr})")
-                    else:
-                        tee(f"     - {line.strip()}")
-            else: tee(f"     ({T('None')})")
-
-            tee("\n" + "-" * 45)
+        _gerar_size_report(acc, max_size, report_file, silent_stdout=True)
             
     print(f"\n📂 {T('Isolated reports saved in folder:')} {report_dir}")
     pause()
@@ -1183,6 +1218,7 @@ def cmd_detalhes_conta(idx, profile_name):
             break
             
         conta = contas[idx]
+        safe_name = "".join([c for c in conta['PROFILE_NAME'].lower().replace(" ", "_") if c.isalnum() or c=='_'])
         
         mn = []
         mn.append([f"☁️  {T('Cloud (Remote)')}  : {conta['REMOTE_NAME']}:", None])
@@ -1207,6 +1243,11 @@ def cmd_detalhes_conta(idx, profile_name):
         mn.append([f"🛡️  {T('Manage Filters')}", lambda: cmd_gerenciar_filtros_conta(idx)])
         mn.append([f"🔄 {T('Toggle Background Sync')}", lambda: acao_toggle_sync(idx)])
         mn.append([f"🔌 {T('Mount / Unmount Virtual Drive (Shortcut)')}", lambda: cmd_mount_acc(idx)])
+        mn.append([])
+        mn.append([f"🧹 {T('Cleaner and Collision Checker (This Account)')}", lambda: executar_cleaner(conta["LOCAL_DIR"], conta.get("IGNORE_PATTERNS", []), safe_name)])
+        mn.append([f"📊 {T('Report of Files Over the Limit (This Account)')}", lambda: acao_size_report_acc(idx)])
+        mn.append([f"🧪 {T('Test-Drive / Simulation (Dry-Run)')}", lambda: executar_dry_run([conta])])
+        mn.append([f"🚀 {T('Force Sync Now')}", lambda: executar_run_now([conta])])
         mn.append([])
         mn.append([f"❌ {T('Remove this account')}", lambda: acao_remover_conta(idx)])
         
@@ -1786,29 +1827,29 @@ def run_config_wizard():
         mn.append([f"📋 {T('List current accounts')}", cmd_list_accounts])
         mn.append([f"➕ {T('Add new account')}", cmd_add_account])
         
-        mn.append(f"--- {T('Global Settings')} ---")
-        mn.append([f"⚙️  {T('Edit Interval, Bandwidth, Folders, and Collisions')}", cmd_global_settings])
-        
         mn.append(f"--- {T('Synchronization')} ---")
         mn.append([f"🧪 {T('Test-Drive / Simulation (Dry-Run)')}", run_dry_run])
         mn.append([f"🚀 {T('Force Sync Now')}", run_now])
-        mn.append([f"{T('⏰ Task Scheduler (Cron)')}", cmd_scheduler_menu])
+        mn.append([f"⏰ {T('Task Scheduler (Cron)')}", cmd_scheduler_menu])
+        
+        mn.append(f"--- {T('Global Settings')} ---")
+        mn.append([f"⚙️  {T('Edit Interval, Bandwidth, Folders, and Collisions')}", cmd_global_settings])
+        
+        mn.append(f"--- {T('Extra Actions')} ---")
+        mn.append([f"☁️  {T('Direct Cloud-to-Cloud Migration')}", run_cloud_migration])
+        mn.append([f"🔌 {T('Mount Cloud as Virtual Drive (Mount)')}", run_mount_manager])
+        mn.append([f"💾 {T('Backup and Restore Configurations')}", cmd_backup_restore])
+        
+        mn.append(f"--- {T('Background Motor')} ---")
+        mn.append([f"▶️  {T('Start Service')}", cmd_service_start])
+        mn.append([f"⏹️  {T('Stop Service')}", cmd_service_stop])
+        mn.append([f"ℹ️  {T('Check Motor Status')}", cmd_service_status])
         
         mn.append(f"--- {T('Maintenance')} ---")
         mn.append([f"📊 {T('Report of Files Over the Limit')}", run_size_report])
         mn.append([f"🧹 {T('Cleaner and Collision Checker')}", run_filename_cleaner])
         mn.append([f"🔎 {T('Sync Error Analyzer')}", run_analyze_errors])
         mn.append([f"🩺 {T('System Diagnostics (Doctor)')}", lambda: run_doctor(load_config())])
-        mn.append([f"💾 {T('Backup and Restore Configurations')}", cmd_backup_restore])
-        
-        mn.append(f"--- {T('Extra Actions')} ---")
-        mn.append([f"☁️  {T('Direct Cloud-to-Cloud Migration')}", run_cloud_migration])
-        mn.append([f"🔌 {T('Mount Cloud as Virtual Drive (Mount)')}", run_mount_manager])
-        
-        mn.append(f"--- {T('Background Motor')} ---")
-        mn.append([f"▶️  {T('Start Service')}", cmd_service_start])
-        mn.append([f"⏹️  {T('Stop Service')}", cmd_service_stop])
-        mn.append([f"ℹ️  {T('Check Motor Status')}", cmd_service_status])
         mn.append([f"🔄 {T('Update Application Version')}", run_update])
         mn.append([f"🧨 {T('Uninstall Sync Engine')}", run_uninstall])
         

@@ -37,6 +37,7 @@ WantedBy=default.target
 def manage_service(action, log_file):
     # Importa a função de tradução e carregamento de config aqui para evitar importação circular
     from sync_config import T, load_config
+    config = load_config()
 
     if SISTEMA == "Linux":
         service_name = "sync-engine.service"
@@ -55,7 +56,9 @@ def manage_service(action, log_file):
             subprocess.run(["systemctl", "--user", "status", service_name, "--no-pager"])
             print("="*45)
             
-            config = load_config()
+            is_active_check = subprocess.run(["systemctl", "--user", "is-active", service_name], capture_output=True, text=True)
+            motor_running = (is_active_check.stdout.strip() == "active")
+            
             contas = config.get("ACCOUNTS", [])
             print(f"📋 {T('BACKGROUND SYNC ACCOUNTS:')}")
             if not contas:
@@ -70,12 +73,20 @@ def manage_service(action, log_file):
                         print(f"   🔴 {nome} [{T('PAUSED')}]")
             print("="*45)
             
-            res_s = subprocess.run(["pgrep", "-f", "rclone bisync"], capture_output=True, text=True)
-            if res_s.stdout.strip():
-                print(f"⚡ {T('ACTIVITY:')} {T('Synchronization in progress right now!')}")
+            if motor_running:
+                res_s = subprocess.run(["pgrep", "-f", "rclone bisync"], capture_output=True, text=True)
+                if res_s.stdout.strip():
+                    print(f"⚡ {T('ACTIVITY:')} {T('Synchronization in progress right now!')}")
+                else:
+                    print(f"💤 {T('ACTIVITY:')} {T('Idle (Waiting for next cycle)')}")
             else:
-                print(f"💤 {T('ACTIVITY:')} {T('Idle (Waiting for next cycle)')}")
+                print(f"🛑 {T('ACTIVITY:')} {T('Motor is OFF (No background activity)')}")
             print("="*45)
+            
+            tasks = config.get("SCHEDULED_TASKS", [])
+            if tasks and not motor_running:
+                print(f"⚠️  {T('WARNING:')} {len(tasks)} {T('scheduled task(s) will NOT run because the motor is stopped.')}")
+                print("="*45)
             
         elif action == "reload":
             res = subprocess.run(["systemctl", "--user", "is-enabled", service_name], capture_output=True, text=True)
@@ -96,7 +107,7 @@ def manage_service(action, log_file):
         script_path = os.path.join(base_dir, "sync_engine.py")
 
         if action == "start":
-            ps_script = f"$WshShell = New-Object -comObject WScript.Shell; $Shortcut =$WshShell.CreateShortcut('{shortcut_path}'); $Shortcut.TargetPath = '{pythonw_exe}';$Shortcut.Arguments = '`\"{script_path}`\"'; $Shortcut.WorkingDirectory = '{base_dir}'; $Shortcut.WindowStyle = 0; $Shortcut.Save()"
+            ps_script = f"$WshShell = New-Object -comObject WScript.Shell; $Shortcut =$WshShell.CreateShortcut('{shortcut_path}'); $Shortcut.TargetPath = '{pythonw_exe}';$Shortcut.Arguments = '\"{script_path}\"'; $Shortcut.WorkingDirectory = '{base_dir}'; $Shortcut.WindowStyle = 0; $Shortcut.Save()"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], creationflags=_get_cflags())
             subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())
             print(f"✅ {T('Windows Motor started and Automatic Startup enabled!')}")
@@ -105,7 +116,7 @@ def manage_service(action, log_file):
             if os.path.exists(shortcut_path):
                 try: os.remove(shortcut_path)
                 except: pass
-            ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
+            ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
             print(f"🛑 {T('Windows Motor stopped and Automatic Startup disabled.')}")
 
@@ -121,13 +132,14 @@ def manage_service(action, log_file):
             ps_check_sync = "Get-CimInstance Win32_Process -Filter \"Name='rclone.exe'\" | Where-Object { $_.CommandLine -like '*bisync*' } | Select-Object -ExpandProperty ProcessId"
             res_s = subprocess.run(["powershell", "-NoProfile", "-Command", ps_check_sync], capture_output=True, text=True, creationflags=_get_cflags())
             
+            motor_running = bool(res_m.stdout.strip())
+            
             print("="*45)
-            if res_m.stdout.strip():
+            if motor_running:
                 print(f"🟢 {T('MOTOR:')} {T('RUNNING (Active in Background)')}")
             else:
                 print(f"🔴 {T('MOTOR:')} {T('STOPPED')}")
                 
-            config = load_config()
             contas = config.get("ACCOUNTS", [])
             print("="*45)
             print(f"📋 {T('BACKGROUND SYNC ACCOUNTS:')}")
@@ -143,16 +155,24 @@ def manage_service(action, log_file):
                         print(f"   🔴 {nome} [{T('PAUSED')}]")
             print("="*45)
 
-            if res_s.stdout.strip():
-                print(f"⚡ {T('ACTIVITY:')} {T('Synchronization in progress right now!')}")
+            if motor_running:
+                if res_s.stdout.strip():
+                    print(f"⚡ {T('ACTIVITY:')} {T('Synchronization in progress right now!')}")
+                else:
+                    print(f"💤 {T('ACTIVITY:')} {T('Idle (Waiting for next cycle)')}")
             else:
-                print(f"💤 {T('ACTIVITY:')} {T('Idle (Waiting for next cycle)')}")
+                print(f"🛑 {T('ACTIVITY:')} {T('Motor is OFF (No background activity)')}")
             print("="*45)
+            
+            tasks = config.get("SCHEDULED_TASKS", [])
+            if tasks and not motor_running:
+                print(f"⚠️  {T('WARNING:')} {len(tasks)} {T('scheduled task(s) will NOT run because the motor is stopped.')}")
+                print("="*45)
 
         elif action == "reload":
             is_enabled = os.path.exists(shortcut_path)
             print(f"\n🔄 {T('Reloading the invisible motor in memory...')}")
-            ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } \vert{} ForEach-Object { Stop-Process -Id$_.ProcessId -Force }"
+            ps_kill = "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*sync_engine*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
             subprocess.run(["powershell", "-NoProfile", "-Command", ps_kill], creationflags=_get_cflags())
             import time; time.sleep(1)
             subprocess.Popen([pythonw_exe, "sync_engine.py"], cwd=base_dir, creationflags=_get_cflags())

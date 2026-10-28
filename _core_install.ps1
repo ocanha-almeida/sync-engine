@@ -13,8 +13,8 @@ try {
         
         Stop-Process -Name "pythonw" -ErrorAction SilentlyContinue
         
-        if (Test-Path -LiteralPath $ShortcutPath) { Remove-Item -LiteralPath $ShortcutPath -Force }
-        if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
+        if (Test-Path -Path $ShortcutPath) { Remove-Item -Path $ShortcutPath -Force }
+        if (Test-Path -Path $InstallDir) { Remove-Item -Path $InstallDir -Recurse -Force }
         
         $path = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User)
         if ($path -like "*$InstallDir*") {
@@ -31,27 +31,34 @@ try {
     Write-Host "🚀 Installing Sync Engine (Startup Mode)..." -ForegroundColor Cyan
     Write-Host "   Instalando Sync Engine (Modo Startup)..." -ForegroundColor Cyan
 
-    if (!(Test-Path -LiteralPath $InstallDir)) { 
+    # 1. Remove arquivo residual falso caso uma instalação anterior tenha falhado
+    if (Test-Path -Path $InstallDir -PathType Leaf) {
+        Remove-Item -Path $InstallDir -Force
+    }
+
+    # 2. Cria a pasta principal garantida
+    if (!(Test-Path -Path $InstallDir)) { 
         New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null 
     }
 
-    # Copia os arquivos Python de forma blindada
-    Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.py" | Copy-Item -Destination $InstallDir -Force
+    # 3. Copia apenas os arquivos Python para o diretório
+    Copy-Item -Path "$PSScriptRoot\*.py" -Destination $InstallDir -Force
 
-    # Copia a pasta locales de forma blindada
+    # 4. Garante a pasta locales e copia seu conteúdo explicitamente
     $SourceLocales = Join-Path $PSScriptRoot "locales"
     $DestLocales = Join-Path $InstallDir "locales"
-    if (Test-Path -LiteralPath $SourceLocales) { 
-        if (!(Test-Path -LiteralPath $DestLocales)) { 
+    
+    if (Test-Path -Path $SourceLocales) { 
+        if (!(Test-Path -Path $DestLocales)) { 
             New-Item -ItemType Directory -Force -Path $DestLocales | Out-Null 
         }
-        Get-ChildItem -LiteralPath $SourceLocales | Copy-Item -Destination $DestLocales -Recurse -Force 
+        Copy-Item -Path "$SourceLocales\*" -Destination $DestLocales -Recurse -Force 
     }
 
     # Criação do .cmd corrigida
     $BatPath = Join-Path $InstallDir "sync-engine.cmd"
     $BatContent = "@echo off`npython `"$InstallDir\sync_engine.py`" %*"
-    Set-Content -LiteralPath $BatPath -Value $BatContent -Encoding Ascii
+    Set-Content -Path $BatPath -Value $BatContent -Encoding Ascii
 
     # Atualização da Variável de Ambiente (PATH)
     $path = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User)
@@ -71,7 +78,7 @@ try {
     }
 
     $PythonwExe = $PythonExe -replace "python.exe", "pythonw.exe"
-    if (!(Test-Path -LiteralPath $PythonwExe)) { $PythonwExe = $PythonExe }
+    if (!(Test-Path -Path $PythonwExe)) { $PythonwExe = $PythonExe }
 
     Write-Host "⚙️ Configuring automatic startup..." -ForegroundColor Cyan
     Write-Host "   Configurando inicialização automática..." -ForegroundColor Cyan
