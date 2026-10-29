@@ -1101,7 +1101,9 @@ def cmd_add_account():
     if not op_remote or not op_remote.isdigit() or int(op_remote) - 1 >= len(remotes): return
 
     remote = remotes[int(op_remote) - 1]
-    local = input(f"\n{T('Local folder (Enter for')} '~/{remote}'): ").strip() or f"~/{remote}"
+    
+    print(f"\n💡 {T('Tip: Use ~/ at the beginning to represent your user folder on both Windows and Linux.')}")
+    local = input(f"{T('Local folder (Enter for')} '~/{remote}'): ").strip() or f"~/{remote}"
 
     safe_name = "".join([c for c in profile.lower().replace(" ", "_") if c.isalnum() or c == '_'])
 
@@ -1110,6 +1112,34 @@ def cmd_add_account():
         "*.tmp", ".DS_Store", "site-packages", "Thumbs.db", "~$*",
         "*.trashinfo", ".Trash", "desktop.ini", ".~lock.*", "*.crdownload", "*.part", "node_modules", "$RECYCLE.BIN"
     ]
+    
+    # Validação de Diretório Home
+    local_expanded = os.path.expanduser(local)
+    home_dir = os.path.expanduser("~")
+    
+    if os.path.abspath(local_expanded) == os.path.abspath(home_dir):
+        print(f"\n⚠️  {T('You are syncing your entire user folder (Home).')}")
+        print(T("It is highly recommended to filter out system configuration and cache folders."))
+        resp_home = input(T("Do you want to auto-add standard OS filters for the Home folder? (Y/N) [Y]: ")).strip().lower()
+        if resp_home != 'n':
+            if SISTEMA == "Windows":
+                filtros_home = ["/AppData/**", "NTUSER.DAT*", "ntuser.dat*"]
+                try:
+                    for entry in os.scandir(home_dir):
+                        is_junc = False
+                        if hasattr(entry, 'is_junction') and entry.is_junction(): is_junc = True
+                        elif hasattr(os.path, 'isjunction') and os.path.isjunction(entry.path): is_junc = True
+                        elif entry.is_symlink(): is_junc = True
+                        
+                        if is_junc:
+                            filtros_home.append(f"/{entry.name}/**")
+                except Exception:
+                    pass
+            else:
+                filtros_home = ["/.*/**", "/.*"]
+            
+            filtros_padrao.extend(filtros_home)
+            print(f"✅ {T('Added Home filters:')} {', '.join(filtros_home)}")
 
     nova_conta = {
         "PROFILE_NAME": profile, "REMOTE_NAME": remote, "LOCAL_DIR": local,
@@ -1319,7 +1349,8 @@ def cmd_gerenciar_filtros_conta(idx):
 def acao_mudar_pasta(idx):
     config = load_config()
     conta = config["ACCOUNTS"][idx]
-    novo_dir = input(T("\nEnter the new absolute path for the folder (Ex: ~/NewFolder): ")).strip()
+    print(f"\n💡 {T('Tip: Use ~/ at the beginning to represent your user folder on both Windows and Linux.')}")
+    novo_dir = input(T("Enter the new absolute path for the folder (Ex: ~/NewFolder): ")).strip()
     if novo_dir:
         dir_expandido_novo = os.path.expanduser(novo_dir)
         dir_expandido_velho = os.path.expanduser(conta["LOCAL_DIR"])
